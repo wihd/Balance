@@ -22,10 +22,11 @@ class Partition;
 class Weighing
 {
 public:
+	Weighing(const Partition& partition);
 	auto operator<=>(const Weighing&) const = default;
 	
 	/// Switch to next weighing in standard order on the given partition
-	void advance(const Partition&);
+	void advance(const Partition& partition);
 
 private:
 	/// For each part in partition record the number of coins placed in left pan
@@ -35,7 +36,8 @@ private:
 	std::vector<uint8_t> right;
 	
 	// Helper methods
-	bool advance_left(const Partition&);
+	bool advance_left(const Partition& partition);
+	void place_left(const Partition& partition, uint8_t count, size_t index = 0);
 };
 
 #endif /* Weighing_hpp */

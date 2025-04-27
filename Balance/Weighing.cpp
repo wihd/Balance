@@ -96,6 +96,21 @@
  This proves the result.
  */
 
+Weighing::Weighing(const Partition& partition) : left(partition.size()), right(partition.size())
+{
+	// The first weighing selects one coin for each pan
+	assert(partition.coin_count() >= 2);
+	left[0] = 1;
+	if (partition[0] >= 2)
+	{
+		right[0] = 1;
+	}
+	else
+	{
+		right[1] = 1;
+	}
+}
+
 void Weighing::advance(const Partition& partition)
 {
 	// We assume that this weighing is already a valid weighing for the partition
@@ -150,19 +165,38 @@ bool Weighing::advance_left(const Partition& partition)
 			// We advance left pan by decrementing this slot, and selecting coins as early as possible after it
 			// Since we already passed a slot with spare capacity we must be able to place count coins
 			--left[index];
-			++count;
-			while (count > 0)
-			{
-				++index;
-				assert(index < left.size());
-				
-				// Select as many coins as possible
-				left[index] = std::min(count, partition[index]);
-				count -= left[index];
-			}
+			place_left(partition, count + 1, index);
 			return true;
 		}
 	}
 	
 	// There are no more selections for left with the same size
+	// count must have cleared all of the previous coins so it tells us how many coins were initially in the left pan
+	// We can try again with a larger selection, but we will only do so if there are enough coins in partition
+	// to permit this.
+	++count;
+	if (2 * count > partition.coin_count())
+	{
+		return false;
+	}
+	
+	// Place as many coins as possible in first slot, spill into other slots as needed
+	left[0] = std::min(count, partition[0]);
+	place_left(partition, count - left[0]);
+	return true;
+}
+
+void Weighing::place_left(const Partition& partition, uint8_t count, size_t index)
+{
+	// Place count coins in left pan, starting from index+1 part
+	// Caller already knows that there is room to place the coins
+	while (count > 0)
+	{
+		++index;
+		assert(index < left.size());
+		
+		// Select as many coins as possible
+		left[index] = std::min(count, partition[index]);
+		count -= left[index];
+	}
 }
