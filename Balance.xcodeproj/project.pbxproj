@@ -254,6 +254,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				GCC_PREPROCESSOR_DEFINITIONS = "NDEBUG=1";
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};

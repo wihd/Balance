@@ -4,8 +4,10 @@
 //
 //  Created by William Hurwood on 4/25/25.
 //
-
+#include <cassert>
 #include "WeighingIterator.hpp"
+#include "Weighing.hpp"
+#include "Partition.hpp"
 
 WeighingIterator::WeighingIterator()
 {
@@ -14,12 +16,15 @@ WeighingIterator::WeighingIterator()
 	throw std::runtime_error("Not implemented WeighingIterator forward constructor");
 }
 
-WeighingIterator::WeighingIterator(Partition* ipPartition) : mpPartition(ipPartition)
+WeighingIterator::WeighingIterator(Partition* ipPartition) : partition(ipPartition)
 {
 	
 }
 
 WeighingIterator& WeighingIterator::operator++() {
+	// Actually the advance function is implemented within the Weighing class
+	assert(partition != nullptr);
+	current.advance(*partition);
 	return *this;
 }
 

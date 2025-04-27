@@ -17,9 +17,11 @@
 class Partition
 {
 public:
+	uint8_t operator[](size_t i) const { return parts[i]; }
+	
 private:
 	/// Store number of coins in each part for an implied order of the parts
-	std::vector<uint8_t> mParts;
+	std::vector<uint8_t> parts;
 };
 
 #endif /* Partition_hpp */

@@ -27,17 +27,17 @@ public:
 
 	// Declare methods required by the concept
 	WeighingIterator();
-	const Weighing& operator*() const { return mCurrent; }
+	const Weighing& operator*() const { return current; }
 	WeighingIterator& operator++();
 	WeighingIterator operator++(int);
-	bool operator==(const WeighingIterator& other) const { return mCurrent == other.mCurrent; }
+	bool operator==(const WeighingIterator& other) const { return current == other.current; }
 	
 private:
 	/// The current value of this iterator
-	Weighing mCurrent;
+	Weighing current;
 	
 	/// The partition over whose weighings we are iterating
-	Partition* mpPartition;
+	Partition* partition;
 	// C++20 Note: I wanted to make this a reference
 	// But doing so makes it impossible to assign to the class which is required by forward_iterator<> concept
 	// So we made it a pointer instead

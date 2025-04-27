@@ -4,6 +4,7 @@
 //
 //  Created by William Hurwood on 4/25/25.
 //
+#include <cassert>
 #include "Weighing.hpp"
 #include "Partition.hpp"
 
@@ -95,13 +96,13 @@
  This proves the result.
  */
 
-void Weighing::advance(const Partition* partition)
+void Weighing::advance(const Partition& partition)
 {
 	// We assume that this weighing is already a valid weighing for the partition
 	// Switch to the next weighing in the standard order
 	
 	// We use a weighing with no entries in the pan as a sentinel value for end of sequence
-	if (mPanLeft.empty())
+	if (left.empty())
 	{
 		// We cannot advance beyond the end
 		return;
@@ -110,6 +111,58 @@ void Weighing::advance(const Partition* partition)
 	// TODO: Advance right pan
 	
 	// There were no more options to advance right pan, so advance left pan instead
-	// We keep the current number of coins in the pan fixed, but try selecting them from a different
-	// part of the partition.
+}
+
+bool Weighing::advance_left(const Partition& partition)
+{
+	// We assume that left contains a valid selection.  In addition to satisfying physical constaint
+	// it is known that it is possible to make a valid selection for right pan as well.
+	// We change the left vector to a different valid selection, returning false if this cannot be done.
+	
+	// Initially we keep the current number of coins in the pan fixed, but try selecting them from a different
+	// part of the partition.  The new selection will be lexiographically smaller.
+	
+	// We start by searching from back of vector looking for a part where there is room to increase the number
+	// of coins selected.  We zero the selection size as we go, but track the number of coins that used to be there.
+	uint8_t count = 0;
+	size_t index = left.size() - 1;
+	while (left[index] == partition[index])
+	{
+		count += left[index];
+		left[index] = 0;
+		
+		// The input assumption that it is possible to make a valid assumption for right pan implies
+		// that there must be a part for which left pan did not select all coins in partition
+		// So we should not need to check at run time that index has not underflowed
+		assert(index > 0);
+		--index;
+	}
+	count += left[index];
+	left[index] = 0;
+	
+	// Now we search for an earlier part that has selected some coins in left pan
+	// It is possible that no such part exists
+	while (index > 0)
+	{
+		--index;
+		if (left[index] > 0)
+		{
+			// We advance left pan by decrementing this slot, and selecting coins as early as possible after it
+			// Since we already passed a slot with spare capacity we must be able to place count coins
+			--left[index];
+			++count;
+			while (count > 0)
+			{
+				++index;
+				assert(index < left.size());
+				
+				// Select as many coins as possible
+				left[index] = std::min(count, partition[index]);
+				count -= left[index];
+			}
+			return true;
+		}
+	}
+	
+	// There are no more selections for left with the same size
 }
