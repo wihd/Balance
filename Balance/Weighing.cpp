@@ -123,9 +123,19 @@ void Weighing::advance(const Partition& partition)
 		return;
 	}
 	
-	// TODO: Advance right pan
-	
-	// There were no more options to advance right pan, so advance left pan instead
+	// Attempt to find another weighing by changing the right pan, keeping left pan fixed
+	if (!advance_right(partition))
+	{
+		// There were no more options to advance right pan, so advance left pan instead
+		if (!advance_left(partition))
+		{
+			// Since we could not make a different selection for left pan, it is impossible to make another
+			// selection for entire weighing.
+			// So we are done - switch to the sentinel value
+			left.clear();
+			return;
+		}
+	}
 }
 
 bool Weighing::advance_left(const Partition& partition)
@@ -186,6 +196,55 @@ bool Weighing::advance_left(const Partition& partition)
 	return true;
 }
 
+bool Weighing::advance_right(const Partition& partition)
+{
+	// Assume that on entry left and right are both set to valid selections
+	// Advance right to the next entry which is lexiographically smaller than its current entry but which uses
+	// same number of coins and respects coins already taken by left
+	// Return true if this can be done
+	// Note that we do not need to do anything to ensure that the new right selection is leciographically
+	// smaller than left selection.  It must be true by transitivity.
+
+	// Search for last part with capacity to take more coins
+	uint8_t count = 0;
+	size_t index = right.size() - 1;
+	while (right[index] + left[index] == partition[index])
+	{
+		count += right[index];
+		right[index] = 0;
+
+		// Unlike left pan (where we know there is spare capacity for right pan) it is possible that there is no
+		// space capacity.  This would happen if the weighing includes all coins in the partition
+		if (index == 0)
+		{
+			// Since there is no spare capacity there are no other ways to select right pan's content
+			return false;
+		}
+		--index;
+	}
+	count += right[index];
+	right[index] = 0;
+	
+	// Now we search for an earlier part that has selected some coins in right pan
+	// It is possible that no such part exists
+	while (index > 0)
+	{
+		--index;
+		if (right[index] > 0)
+		{
+			// We advance right pan by decrementing this slot, and selecting coins as early as possible after it
+			// Since we already passed a slot with spare capacity we must be able to place count coins
+			--right[index];
+			place_right(partition, count + 1, index);
+			return true;
+		}
+	}
+	
+	// There are no more options for right pan with this number of coins
+	// Since both pans must have same number of coins we give up here (advance_left() tries again with more coins)
+	return false;
+}
+
 void Weighing::place_left(const Partition& partition, uint8_t count, size_t index)
 {
 	// Place count coins in left pan, starting from index+1 part
@@ -198,5 +257,21 @@ void Weighing::place_left(const Partition& partition, uint8_t count, size_t inde
 		// Select as many coins as possible
 		left[index] = std::min(count, partition[index]);
 		count -= left[index];
+	}
+}
+
+void Weighing::place_right(const Partition& partition, uint8_t count, size_t index)
+{
+	// Place count coins in right pan, starting from index+1 part
+	// Caller already knows that there is room to place the coins
+	while (count > 0)
+	{
+		++index;
+		assert(index < right.size());
+		
+		// Select as many coins as possible
+		// C++ note: To avoid integer type promotion we must explicitly use uint8_t for this expression
+		right[index] = std::min(count, static_cast<uint8_t>(partition[index] - left[index]));
+		count -= right[index];
 	}
 }

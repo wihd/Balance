@@ -37,7 +37,9 @@ private:
 	
 	// Helper methods
 	bool advance_left(const Partition& partition);
+	bool advance_right(const Partition& partition);
 	void place_left(const Partition& partition, uint8_t count, size_t index = 0);
+	void place_right(const Partition& partition, uint8_t count, size_t index = 0);
 };
 
 #endif /* Weighing_hpp */
