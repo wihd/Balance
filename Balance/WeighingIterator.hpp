@@ -23,7 +23,7 @@ public:
 	using element_type = Weighing;			// Concept requirement: we actually return const element_type&
 	
 	/// Construct iterator by specifying partition over which it changes
-	WeighingIterator(Partition* partition);
+	WeighingIterator(const Partition* partition);
 
 	// Declare methods required by the concept
 	WeighingIterator();
@@ -34,7 +34,7 @@ public:
 	
 private:
 	/// The partition over whose weighings we are iterating (or nullptr for iterator stuck at end())
-	Partition* partition;
+	const Partition* partition;
 	// C++20 Note: I originally wanted to make this a reference
 	// But doing so makes it impossible to assign to the class which is required by forward_iterator<> concept
 	// So we made it a pointer instead

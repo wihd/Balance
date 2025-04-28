@@ -15,7 +15,7 @@ WeighingIterator::WeighingIterator(): partition(nullptr), current(nullptr)
 	// This is supported - it will make an iterator that matches the end() position
 }
 
-WeighingIterator::WeighingIterator(Partition* input) : partition(input), current(input)
+WeighingIterator::WeighingIterator(const Partition* input) : partition(input), current(input)
 {
 	// This is the real constructor
 }

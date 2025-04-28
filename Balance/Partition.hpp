@@ -10,6 +10,7 @@
 
 #include <numeric>
 #include <vector>
+#include "WeighingIterator.hpp"
 
 /**
  Immutable class that describes how we have split the coins into parts.
@@ -29,6 +30,12 @@ public:
 	/// Return number of available coins over all of the parts
 	uint8_t coin_count() const { return std::reduce(parts.begin(), parts.end()); }
 	
+	/// Return iterator that generates all weighings for this partition
+	WeighingIterator begin() const { return WeighingIterator(this); }
+	
+	/// Seninel iterator to detect end of weighings for partition
+	WeighingIterator end() const { return WeighingIterator(); }
+
 private:
 	/// Store number of coins in each part for an implied order of the parts
 	std::vector<uint8_t> parts;
