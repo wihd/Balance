@@ -96,18 +96,24 @@
  This proves the result.
  */
 
-Weighing::Weighing(const Partition& partition) : left(partition.size()), right(partition.size())
+Weighing::Weighing(const Partition* partition) :
+	left(partition ? partition->size() : 0),
+	right(partition ? partition->size() : 0)
 {
-	// The first weighing selects one coin for each pan
-	assert(partition.coin_count() >= 2);
-	left[0] = 1;
-	if (partition[0] >= 2)
+	// Caller can construct with no partition if caller wants to make a sentinel value
+	if (partition)
 	{
-		right[0] = 1;
-	}
-	else
-	{
-		right[1] = 1;
+		// The first weighing selects one coin for each pan
+		assert(partition->coin_count() >= 2);
+		left[0] = 1;
+		if ((*partition)[0] >= 2)
+		{
+			right[0] = 1;
+		}
+		else
+		{
+			right[1] = 1;
+		}
 	}
 }
 
@@ -116,26 +122,130 @@ void Weighing::advance(const Partition& partition)
 	// We assume that this weighing is already a valid weighing for the partition
 	// Switch to the next weighing in the standard order
 	
-	// We use a weighing with no entries in the pan as a sentinel value for end of sequence
-	if (left.empty())
-	{
-		// We cannot advance beyond the end
-		return;
-	}
-	
+	// We use a weighing with no entries as a sentinel value for end of sequence
 	// Attempt to find another weighing by changing the right pan, keeping left pan fixed
-	if (!advance_right(partition))
+	if (!left.empty() && !advance_right(partition))
 	{
 		// There were no more options to advance right pan, so advance left pan instead
 		if (!advance_left(partition))
 		{
 			// Since we could not make a different selection for left pan, it is impossible to make another
-			// selection for entire weighing.
-			// So we are done - switch to the sentinel value
-			left.clear();
-			return;
+			// selection for entire weighing.  Switch to the sentinel value.
+			end();
+		}
+		else if (!select_right(partition))
+		{
+			// The large comment above justifies the claim that if it is impossible to select right
+			// lexiographically smaller than left (we know that there are enough coins if we had a free selection)
+			// then it will be impossible for any left lexiographically smaller than its current value
+			// So we should go directly to case where we start with a larger selection
+			uint8_t new_pan_count = pan_count() + 1;
+			if (2 * new_pan_count > partition.coin_count())
+			{
+				// There are not enough coins to use selections of this size
+				end();
+			}
+			else
+			{
+				// Set left to be the first coins - it has to be possible to fill on right
+				fill_left(partition, new_pan_count);
+				select_right(partition);
+			}
 		}
 	}
+}
+
+bool Weighing::select_right(const Partition& partition)
+{
+	// Try to select coins for right pan consistent with left pan selection
+	// We do not assume that right[] is set to all zeros on entry
+	
+	// First try to set every part in right to same in left
+	uint8_t count = pan_count();
+	for (size_t index = 0; index != right.size(); ++index)
+	{
+		if (partition[index] >= 2 * left[index])
+		{
+			right[index] = std::min(count, left[index]);
+			count -= right[index];
+		}
+		else
+		{
+			// We cannot match left selection for this part, since there were too few coins left in the part
+			right[index] = std::min(count, static_cast<uint8_t>(partition[index] - left[index]));
+			count -= right[index];
+			
+			// Now that we have selected fewer coins at index we can select maximal available coins in all
+			// other parts without violating lexical constraint
+			// We do not use fill_right() since we do not know that we will be able to select count coins
+			for (auto i = index + 1; i != right.size(); ++i)
+			{
+				right[i] = std::min(count, static_cast<uint8_t>(partition[i] - left[i]));
+				count -= right[i];
+			}
+			
+			// If we were able to select all coins then this must be lexiographically first selection
+			if (count == 0)
+			{
+				return true;
+			}
+			
+			// The largest possible (lexiographically) selection did not work
+			// However a better selection might be possible.  There may be some i (i < index) where
+			// we could select one fewer coins.  This might allow us to select more for later indexes
+			// because we would satisfy the lexical concern earlier
+			++count;
+
+			// Search back looking for indexes where we could have choosen more
+			// NB There is no point in looking at index==0 since we need to have an earlier part to decrement
+			while (index > 1)
+			{
+				// Previously we selected right[index] coins here
+				// But without lexiographical constraint we could have selected partition[index] - left[index]
+				--index;
+				count += right[index];
+				right[index] = std::min(count, static_cast<uint8_t>(partition[index] - left[index]));
+				count -= right[index];
+				
+				// If we have reduced count to zero we have a chance
+				if (count == 0)
+				{
+					// If we can remove one from an index before current index then we will have a solution
+					while (index > 0)
+					{
+						if (right[--index] > 0)
+						{
+							// Reduce size of selection for this part
+							--right[index];
+
+							// However the solution could easily be wrong because we added coins in wrong order
+							// (To be lex maximal we should have added in order of incrementing index)
+							// We know count up this index is not enough (since right[i] <= left[i] in this range)
+							count = pan_count();
+							for (size_t i = 0; i <= index; ++i)
+							{
+								count -= right[i];
+							}
+							assert(count >= 1);
+							
+							// Now we fill again.  The point is that because we placed some coins earlier
+							// this fill will run out of coins before it reaches the end
+							fill_right(partition, count, index + 1);
+							return true;
+						}
+					}
+					
+					// We must have used the first non-zero part to get enough coins
+					// This means that we cannot find a selection that satisfies the lexiograph restriction
+					return false;
+				}
+			}
+			return false;
+		}
+	}
+	
+	// Identical selection works - it must be the lexically largest permitted selection
+	return true;
 }
 
 bool Weighing::advance_left(const Partition& partition)
@@ -148,13 +258,12 @@ bool Weighing::advance_left(const Partition& partition)
 	// part of the partition.  The new selection will be lexiographically smaller.
 	
 	// We start by searching from back of vector looking for a part where there is room to increase the number
-	// of coins selected.  We zero the selection size as we go, but track the number of coins that used to be there.
+	// of coins selected.  We count the number of coins that we have passed over
 	uint8_t count = 0;
 	size_t index = left.size() - 1;
 	while (left[index] == partition[index])
 	{
 		count += left[index];
-		left[index] = 0;
 		
 		// The input assumption that it is possible to make a valid assumption for right pan implies
 		// that there must be a part for which left pan did not select all coins in partition
@@ -163,7 +272,6 @@ bool Weighing::advance_left(const Partition& partition)
 		--index;
 	}
 	count += left[index];
-	left[index] = 0;
 	
 	// Now we search for an earlier part that has selected some coins in left pan
 	// It is possible that no such part exists
@@ -175,7 +283,7 @@ bool Weighing::advance_left(const Partition& partition)
 			// We advance left pan by decrementing this slot, and selecting coins as early as possible after it
 			// Since we already passed a slot with spare capacity we must be able to place count coins
 			--left[index];
-			place_left(partition, count + 1, index);
+			fill_left(partition, count + 1, index + 1);
 			return true;
 		}
 	}
@@ -190,9 +298,8 @@ bool Weighing::advance_left(const Partition& partition)
 		return false;
 	}
 	
-	// Place as many coins as possible in first slot, spill into other slots as needed
-	left[0] = std::min(count, partition[0]);
-	place_left(partition, count - left[0]);
+	// Try again with the additional coins
+	fill_left(partition, count);
 	return true;
 }
 
@@ -211,7 +318,6 @@ bool Weighing::advance_right(const Partition& partition)
 	while (right[index] + left[index] == partition[index])
 	{
 		count += right[index];
-		right[index] = 0;
 
 		// Unlike left pan (where we know there is spare capacity for right pan) it is possible that there is no
 		// space capacity.  This would happen if the weighing includes all coins in the partition
@@ -223,7 +329,6 @@ bool Weighing::advance_right(const Partition& partition)
 		--index;
 	}
 	count += right[index];
-	right[index] = 0;
 	
 	// Now we search for an earlier part that has selected some coins in right pan
 	// It is possible that no such part exists
@@ -235,7 +340,7 @@ bool Weighing::advance_right(const Partition& partition)
 			// We advance right pan by decrementing this slot, and selecting coins as early as possible after it
 			// Since we already passed a slot with spare capacity we must be able to place count coins
 			--right[index];
-			place_right(partition, count + 1, index);
+			fill_right(partition, count + 1, index + 1);
 			return true;
 		}
 	}
@@ -245,33 +350,30 @@ bool Weighing::advance_right(const Partition& partition)
 	return false;
 }
 
-void Weighing::place_left(const Partition& partition, uint8_t count, size_t index)
+void Weighing::fill_left(const Partition& partition, uint8_t count, size_t index)
 {
-	// Place count coins in left pan, starting from index+1 part
-	// Caller already knows that there is room to place the coins
-	while (count > 0)
+	// Place `count` coins in left pan, starting from part `index`
+	// We will make no assumptions about existing values in these slots
+	// We expect that caller will have validated that there is room for these coins
+	for (; index != left.size(); ++index)
 	{
-		++index;
-		assert(index < left.size());
-		
 		// Select as many coins as possible
 		left[index] = std::min(count, partition[index]);
 		count -= left[index];
 	}
+	assert(count == 0);
 }
 
-void Weighing::place_right(const Partition& partition, uint8_t count, size_t index)
+void Weighing::fill_right(const Partition& partition, uint8_t count, size_t index)
 {
 	// Place count coins in right pan, starting from index+1 part
 	// Caller already knows that there is room to place the coins
-	while (count > 0)
+	for (; index != right.size(); ++index)
 	{
-		++index;
-		assert(index < right.size());
-		
 		// Select as many coins as possible
 		// C++ note: To avoid integer type promotion we must explicitly use uint8_t for this expression
 		right[index] = std::min(count, static_cast<uint8_t>(partition[index] - left[index]));
 		count -= right[index];
 	}
+	assert(count == 0);
 }

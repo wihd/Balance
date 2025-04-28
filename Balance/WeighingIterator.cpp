@@ -9,16 +9,15 @@
 #include "Weighing.hpp"
 #include "Partition.hpp"
 
-WeighingIterator::WeighingIterator()
+WeighingIterator::WeighingIterator(): partition(nullptr), current(nullptr)
 {
 	// The forward_iterator concept requires that we provide a default constructor
-	// But since class must have a partition pointer we cannot implement it
-	throw std::runtime_error("Not implemented WeighingIterator forward constructor");
+	// This is supported - it will make an iterator that matches the end() position
 }
 
-WeighingIterator::WeighingIterator(Partition* ipPartition) : partition(ipPartition)
+WeighingIterator::WeighingIterator(Partition* input) : partition(input), current(input)
 {
-	
+	// This is the real constructor
 }
 
 WeighingIterator& WeighingIterator::operator++() {

@@ -20,10 +20,10 @@ class WeighingIterator
 {
 public:
 	using difference_type = std::ptrdiff_t;	// Concept requirement
-	using element_type = Weighing;			// Concept requirement, must be underlying type not const actually returned
+	using element_type = Weighing;			// Concept requirement: we actually return const element_type&
 	
 	/// Construct iterator by specifying partition over which it changes
-	WeighingIterator(Partition* ipPartition);
+	WeighingIterator(Partition* partition);
 
 	// Declare methods required by the concept
 	WeighingIterator();
@@ -33,15 +33,14 @@ public:
 	bool operator==(const WeighingIterator& other) const { return current == other.current; }
 	
 private:
-	/// The current value of this iterator
-	Weighing current;
-	
-	/// The partition over whose weighings we are iterating
+	/// The partition over whose weighings we are iterating (or nullptr for iterator stuck at end())
 	Partition* partition;
-	// C++20 Note: I wanted to make this a reference
+	// C++20 Note: I originally wanted to make this a reference
 	// But doing so makes it impossible to assign to the class which is required by forward_iterator<> concept
 	// So we made it a pointer instead
-};
 
+	/// The current value of this iterator
+	Weighing current;
+};
 
 #endif /* WeighingIterator_hpp */

@@ -9,6 +9,7 @@
 #define Weighing_hpp
 
 #include <vector>
+#include <numeric>
 class Partition;
 
 /**
@@ -22,8 +23,11 @@ class Partition;
 class Weighing
 {
 public:
-	Weighing(const Partition& partition);
+	Weighing(const Partition* partition);
 	auto operator<=>(const Weighing&) const = default;
+	
+	/// The number of coins in each pan in the weighing
+	uint8_t pan_count() const { return std::reduce(left.begin(), left.end()); }
 	
 	/// Switch to next weighing in standard order on the given partition
 	void advance(const Partition& partition);
@@ -36,10 +40,19 @@ private:
 	std::vector<uint8_t> right;
 	
 	// Helper methods
+	bool select_right(const Partition& partition);
 	bool advance_left(const Partition& partition);
 	bool advance_right(const Partition& partition);
-	void place_left(const Partition& partition, uint8_t count, size_t index = 0);
-	void place_right(const Partition& partition, uint8_t count, size_t index = 0);
+	void fill_left(const Partition& partition, uint8_t count, size_t index = 0);
+	void fill_right(const Partition& partition, uint8_t count, size_t index = 0);
+	void end()
+	{
+		// We must clear **both** vectors to make this into sentinel value
+		// The default <=> operator will compare both arrays to test for end() so we cannot
+		// afford to leave one array with content
+		left.clear();
+		right.clear();
+	}
 };
 
 #endif /* Weighing_hpp */
