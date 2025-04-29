@@ -4,4 +4,43 @@
 //
 //  Created by William Hurwood on 4/25/25.
 //
+#include <cassert>
 #include "Partition.hpp"
+#include "Weighing.hpp"
+
+Partition::Partition(const PartitionProvenance& provenance, const Weighing& weighing, const Partition& base)
+{
+	// The provenance (which is in effect a partial computation) tells us how many parts we need
+	// But to compute the size of each part we must examine the weighing
+	parts.reserve(provenance.size());
+	int base_part = -1;
+	uint8_t base_count = 0;
+	for (auto& part_provenance : provenance)
+	{
+		// We may assume that parts from same base part are adjacent & end with the coins set aside
+		// So we can compute the number of coins set aside as we go along
+		if (base_part != part_provenance.part)
+		{
+			base_part = part_provenance.part;
+			base_count = base[base_part];
+		}
+		
+		switch (part_provenance.placement)
+		{
+			case Placement::LeftPan:
+				parts.push_back(weighing.left_count(base_part));
+				base_count -= weighing.left_count(base_part);
+				break;
+			case Placement::RightPan:
+				parts.push_back(weighing.right_count(base_part));
+				base_count -= weighing.right_count(base_part);
+				break;
+			case Placement::SetAside:
+				parts.push_back(base_count);
+				break;
+		}
+	}
+	
+	// Both partitions should have same size
+	assert(coin_count() == base.coin_count());
+}

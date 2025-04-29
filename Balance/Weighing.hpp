@@ -10,6 +10,7 @@
 
 #include <vector>
 #include <numeric>
+#include "Types.h"
 class Partition;
 
 /**
@@ -26,8 +27,15 @@ public:
 	Weighing(const Partition* partition);
 	auto operator<=>(const Weighing&) const = default;
 	
+	// Accessors
+	auto left_count(size_t index) const { return left[index]; }
+	auto right_count(size_t index) const { return right[index]; }
+	
 	/// The number of coins in each pan in the weighing
 	uint8_t pan_count() const { return std::reduce(left.begin(), left.end()); }
+	
+	/// Describe the partition induced by applying this weighing to a base partition
+	PartitionProvenance compute_provenance(const Partition& base) const;
 	
 	/// Switch to next weighing in standard order on the given partition
 	void advance(const Partition& partition);

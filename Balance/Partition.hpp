@@ -10,7 +10,9 @@
 
 #include <numeric>
 #include <vector>
+#include "Types.h"
 #include "WeighingIterator.hpp"
+class Weighing;
 
 /**
  Immutable class that describes how we have split the coins into parts.
@@ -21,6 +23,12 @@
 class Partition
 {
 public:
+	/// An initial partition has n coins, all in a single group
+	Partition(uint8_t count) : parts(1, count) {}
+
+	/// We can also construct a partition from a Weighing applied to another partition
+	Partition(const PartitionProvenance& provenance, const Weighing& weighing, const Partition& base);
+	
 	/// Return number of coins available in selected part
 	uint8_t operator[](size_t i) const { return parts[i]; }
 	

@@ -117,6 +117,33 @@ Weighing::Weighing(const Partition* partition) :
 	}
 }
 
+PartitionProvenance Weighing::compute_provenance(const Partition& base) const
+{
+	// Determine the parts that would be a partition made by applying this weighing to a base partition
+	PartitionProvenance result;
+	for (int i = 0; i != base.size(); ++i)
+	{
+		// Each base part must supply at least one output part
+		// It could supply up to three of them if it is split apart
+		auto count = base[i];
+		if (left[i] > 0)
+		{
+			result.emplace_back(i, Placement::LeftPan);
+			count -= left[i];
+		}
+		if (right[i] > 0)
+		{
+			result.emplace_back(i, Placement::RightPan);
+			count -= right[i];
+		}
+		if (count > 0)
+		{
+			result.emplace_back(i, Placement::SetAside);
+		}
+	}
+	return result;
+}
+
 void Weighing::advance(const Partition& partition)
 {
 	// We assume that this weighing is already a valid weighing for the partition
