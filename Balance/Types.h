@@ -10,6 +10,8 @@
 #ifndef Types_h
 #define Types_h
 
+#include <vector>
+
 /** Enumerate the options for handling a coin in a weighing */
 typedef enum : int {
 	LeftPan,

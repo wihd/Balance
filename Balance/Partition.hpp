@@ -25,7 +25,8 @@ class Partition
 public:
 	/// An initial partition has n coins, all in a single group
 	Partition(uint8_t count) : parts(1, count) {}
-
+	auto operator<=>(const Partition&) const = default;
+	
 	/// We can also construct a partition from a Weighing applied to another partition
 	Partition(const PartitionProvenance& provenance, const Weighing& weighing, const Partition& base);
 	
