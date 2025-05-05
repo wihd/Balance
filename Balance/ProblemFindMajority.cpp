@@ -37,6 +37,9 @@ public:
 	// advance the iterator and return true
 	// Alternatively return false
 	virtual bool advance(ProblemFindMajority::Distribution& distribution) = 0;
+	
+	// Reset the splitter and immediately advance to its first entry
+	void restart(ProblemFindMajority::Distribution& distribution) { reset(); advance(distribution); }
 
 protected:
 	int base_index;			// First output index used by this splitter
@@ -220,6 +223,9 @@ OutcomeArray<ProblemFindMajority::StateType> ProblemFindMajority::apply_weighing
 	}
 	assert(splitters.size() == input_partition.size());
 
+	// We will keep updating the same distribution object
+	Distribution current(output_partition.size(), 0);
+	
 	// We consider each possible input distribution in turn
 	for (auto& distribution : input_state)
 	{
@@ -229,8 +235,70 @@ OutcomeArray<ProblemFindMajority::StateType> ProblemFindMajority::apply_weighing
 		{
 			splitter->set_count(h_count);
 		}
+		
+		// Restart all of the splitters (which will overwrite all entries in `current` to a valid output distribution)
+		for (auto& splitter : splitters)
+		{
+			splitter->restart(current);
+		}
+		
+		// Each time we go round this loop we will have a new distribution
+		auto advanced_splitter = splitters.begin();
+		while (advanced_splitter != splitters.end())
+		{
+			// `current` now contains a valid output distribution made by splitting the input
+			// We must allocate it to one of the three outcome sets based on the outcome of the weighing
+			// when this distribution is used
+			// Count number of H coins placed in each pan by this distribution
+			int count_left = 0;
+			int count_right = 0;
+			for (int i = 0; i != provanence.size(); ++i)
+			{
+				switch (provanence[i].placement)
+				{
+					case LeftPan:
+						count_left += current[i];
+						break;
+					case RightPan:
+						count_right += current[i];
+						break;
+					case SetAside:
+						break;
+				}
+			}
+			
+			// Insert (a copy of) current into one of the three output sets based on what would happen
+			if (count_left > count_right)
+			{
+				distributions[Outcome::LeftHeavier].insert(current);
+			}
+			else if (count_right > count_left)
+			{
+				distributions[Outcome::RightHeavier].insert(current);
+			}
+			else
+			{
+				distributions[Outcome::Balances].insert(current);
+			}
+			
+			// We walk through the splitters, trying to find one that can be advanced
+			for (advanced_splitter = splitters.begin(); advanced_splitter != splitters.end(); ++advanced_splitter)
+			{
+				// Are we able to advance this splitter?
+				if ((*advanced_splitter)->advance(current))
+				{
+					// All the splitters that had finished must be restarted
+					// Note that since all the splitters write into different parts of current it does not
+					// matter that we advanced them in uneven order
+					for (auto it = splitters.begin(); it != advanced_splitter; ++it)
+					{
+						(*it)->restart(current);
+					}
+				}
+			}
+		}
 	}
-	
+
 	// Once we have built the output distributions there is no point in using the set any more
 	OutcomeArray<StateType> result;
 	for (int i = Outcome::Begin; i != Outcome::End; ++i)
