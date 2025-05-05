@@ -34,6 +34,8 @@ struct PartProvenance
 
 /**
  A partition provance lists the provance of each its parts in order
+ We guarantee that the members of the provenance vector are always sorted, first by part number
+ and then by placement.  Each part will appear at least once.
  */
 typedef std::vector<PartProvenance> PartitionProvenance;
 

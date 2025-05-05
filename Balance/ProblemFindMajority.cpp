@@ -6,6 +6,8 @@
 //
 #include <cassert>
 #include <set>
+#include <memory>
+#include <ranges>
 #include "ProblemFindMajority.hpp"
 
 // C++ 20 note: We assert that ProblemFindMajority can be used as a Problem
@@ -23,6 +25,8 @@ static_assert(Problem<ProblemFindMajority>);
 class Splitter
 {
 public:
+	Splitter(uint8_t index) : base_index(index) {}
+	
 	// Specify number of H coins in distribution to be split
 	void set_count(uint8_t new_count) { count = new_count; }
 	
@@ -35,19 +39,19 @@ public:
 	virtual bool advance(ProblemFindMajority::Distribution& distribution) = 0;
 
 protected:
-	uint8_t count = 0;
+	int base_index;			// First output index used by this splitter
+	uint8_t count = 0;		// Number of H coins split over the output
 };
 
 // Simplest splitter only has one output, so it does not do any splitting
 class SplitterOne : public Splitter
 {
 public:
-	SplitterOne(int part_index) : part(part_index) {}
+	SplitterOne(int part_index) : Splitter(part_index) {}
 	void reset() override { has_visited = false; }
 	bool advance(ProblemFindMajority::Distribution& distribution) override;
 	
 private:
-	int part;
 	bool has_visited = false;
 };
 
@@ -61,7 +65,7 @@ bool SplitterOne::advance(ProblemFindMajority::Distribution& distribution)
 	else
 	{
 		has_visited = true;
-		distribution[part] = count;
+		distribution[base_index] = count;
 		return true;
 	}
 }
@@ -70,13 +74,11 @@ bool SplitterOne::advance(ProblemFindMajority::Distribution& distribution)
 class SplitterTwo : public Splitter
 {
 public:
-	SplitterTwo(int index_a, int index_b) : part_a(index_a), part_b(index_b) {}
+	SplitterTwo(int first_part_index) : Splitter(first_part_index) {}
 	void reset() override { next_a_count = 0; }
 	bool advance(ProblemFindMajority::Distribution& distribution) override;
 	
 private:
-	int part_a;
-	int part_b;
 	uint8_t next_a_count = 0;
 };
 
@@ -85,8 +87,8 @@ bool SplitterTwo::advance(ProblemFindMajority::Distribution& distribution)
 	// Is the next distribution viable?
 	if (next_a_count <= count)
 	{
-		distribution[part_a] = next_a_count;
-		distribution[part_b] = count - next_a_count;
+		distribution[base_index] = next_a_count;
+		distribution[base_index+1] = count - next_a_count;
 		++next_a_count;
 		return true;
 	}
@@ -97,14 +99,11 @@ bool SplitterTwo::advance(ProblemFindMajority::Distribution& distribution)
 class SplitterThree : public Splitter
 {
 public:
-	SplitterThree(int index_a, int index_b, int index_c) : part_a(index_a), part_b(index_b), part_c(index_c) {}
+	SplitterThree(int first_part_index) : Splitter(first_part_index) {}
 	void reset() override { next_a_count = 0; next_b_count = 0; }
 	bool advance(ProblemFindMajority::Distribution& distribution) override;
 	
 private:
-	int part_a;
-	int part_b;
-	int part_c;
 	uint8_t next_a_count = 0;
 	uint8_t next_b_count = 0;
 };
@@ -114,9 +113,9 @@ bool SplitterThree::advance(ProblemFindMajority::Distribution& distribution)
 	// Is the next distribution viable?
 	if (next_a_count + next_b_count <= count)
 	{
-		distribution[part_a] = next_a_count;
-		distribution[part_b] = next_b_count;
-		distribution[part_c] = count - next_a_count - next_b_count;
+		distribution[base_index] = next_a_count;
+		distribution[base_index+1] = next_b_count;
+		distribution[base_index+2] = count - next_a_count - next_b_count;
 		
 		// If incrementing a is still viable then that's what we do next
 		if (++next_a_count + next_b_count > count)
@@ -181,11 +180,55 @@ OutcomeArray<ProblemFindMajority::StateType> ProblemFindMajority::apply_weighing
 	// It is very easy to obtain the same output distribution from multiple input distributions
 	// Internally we store the distributions as a set to remove duplicates as we go along
 	OutcomeArray<std::set<Distribution>> distributions;
+	
+	// We will construct an array of splitters, one for each input part
+	// These splitters will track the various ways that we can divide the H coins that might be assigned to the part
+	// Observe that the splitters depend only on the provanence so we will reuse this vector for each distribution
+	std::vector<std::unique_ptr<Splitter>> splitters;
+	splitters.reserve(input_partition.size());
+	
+	// Take advantage of fact that provenance lists output parts from same input together
+	// So all we care about is the number of times we see same input part number
+	int split_count = 0;
+	
+	for (int i = 0; i != provanence.size(); ++i)
+	{
+		// We have found another way of splitting the current input part
+		++split_count;
+		
+		// Have we reached end of output parts for this input part?
+		if (i + 1 == provanence.size() || provanence[i].part != provanence[i+1].part)
+		{
+			// Create a splitter for the number of parts
+			switch (split_count)
+			{
+				case 1:
+					splitters.push_back(std::make_unique<SplitterOne>(i));
+					break;
+				case 2:
+					splitters.push_back(std::make_unique<SplitterTwo>(i-1));
+					break;
+				case 3:
+					splitters.push_back(std::make_unique<SplitterThree>(i-2));
+					break;
+				default:
+					// Split counts should always be 1, 2 or 3
+					assert(false);
+			}
+			split_count = 0;
+		}
+	}
+	assert(splitters.size() == input_partition.size());
 
 	// We consider each possible input distribution in turn
 	for (auto& distribution : input_state)
 	{
-		
+		// Configure the splitters with the number of H coins in each input part
+		// C++23 Note: We can have option to iterate over two collections together
+		for (auto [h_count, splitter] : std::views::zip(distribution, splitters))
+		{
+			splitter->set_count(h_count);
+		}
 	}
 	
 	// Once we have built the output distributions there is no point in using the set any more
