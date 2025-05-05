@@ -24,8 +24,7 @@ concept Problem = requires(
     const Partition& partition,					// parameter that specifies a partition
     const Weighing& weighing,					// parameter that specifies a weighing
     const PartitionProvenance& provanence,		// parameter that specifies a provanence
-    const typename T::StateType& state_value,	// parameter specifies value returned by apply_weighing
-    uint8_t coin_count)							// coint_count paramter
+    const typename T::StateType& state_value)	// parameter specifies value returned by apply_weighing
 {
 	// Specify that T has a typename parameter called StateType
 	// The problem will use this to track what it knows after some sequence of weighings and outcomes
@@ -35,15 +34,15 @@ concept Problem = requires(
 
 	// Problem must have a function to return the datatype value at the root of the tree
 	// Specify that T has a member function called make_root_data(...)
-	// - Its possible the root value depends on the number of coins, so we pass it into function
 	// - Result of the function must be the same type as DataType
-	{ problem.make_root_data(coin_count) } -> std::same_as<typename T::StateType>;
+	{ problem.make_root_data() } -> std::same_as<typename T::StateType>;
 
 	// Problem tracks what happens when we perform a weighing
 	// - Result is fixed length array giving data for each possible result of the weighing
 	{ problem.apply_weighing
 		(
 		 partition,								// partition to which weighing is applied
+		 state_value,							// The state before this weighing
 		 weighing,								// the weighing we apply
 		 partition,								// partition generated as result of weighing
 		 provanence								// the provenance of parts in output partition
