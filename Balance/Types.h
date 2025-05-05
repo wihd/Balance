@@ -41,11 +41,16 @@ typedef std::vector<PartProvenance> PartitionProvenance;
 typedef enum : int {
 	LeftHeavier,
 	RightHeavier,
-	Balances
+	Balances,
+	
+	// Constants that make code more readable
+	Begin = 0,
+	End = 3,
+	Count = 3,
 } Outcome;
 
 /// Fixed length array to store the three possible outcomes of a sorting
 template <class D>
-using OutcomeArray = std::array<D, 3>;
+using OutcomeArray = std::array<D, Outcome::Count>;
 
 #endif /* Types_h */
