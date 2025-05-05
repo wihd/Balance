@@ -11,6 +11,7 @@
 #define Types_h
 
 #include <vector>
+#include <array>
 
 /** Enumerate the options for handling a coin in a weighing */
 typedef enum : int {
@@ -36,5 +37,15 @@ struct PartProvenance
  */
 typedef std::vector<PartProvenance> PartitionProvenance;
 
+/// Array listing the three possible outcomes of a weighing operation
+typedef enum : int {
+	LeftHeavier,
+	RightHeavier,
+	Balances
+} Outcome;
+
+/// Fixed length array to store the three possible outcomes of a sorting
+template <class D>
+using OutcomeArray = std::array<D, 3>;
 
 #endif /* Types_h */
