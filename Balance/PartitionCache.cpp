@@ -54,7 +54,26 @@ const PartitionCache::Item& PartitionCache::get_weighings(const Partition* parti
 			auto provenance = weighing.compute_provenance(*partition);
 			auto new_partition = std::make_unique<Partition>(provenance, weighing, *partition);
 			
-			// Use the cached pointer not the one we constructed
+			// Although the provance object is easy to reconstruct from weighing and parent partition
+			// it seems to be more useful than the weighing when considering problems
+			// So we will cache it also within out items structure
+			auto provenance_entry = provanences_cache.find(&provenance);
+			if (provenance_entry == provanences_cache.end())
+			{
+				// Unlike the weighing (which belongs to the parent partition and so must be copied)
+				// we are done with using the provance here, so we can move its value into value owned
+				// by a strong pointer, which will then move into our cache
+				auto unique_provanence = std::make_unique<PartitionProvenance>(std::move(provenance));
+				item.provenances.push_back(unique_provanence.get());
+				provanences_cache.insert(std::move(unique_provanence));
+			}
+			else
+			{
+				// Cache already has equivalent provenance object
+				item.provenances.push_back(provenance_entry->get());
+			}
+
+			// Use the cached pointer not the one we constructed for the child partition
 			auto emplace_result = cache.try_emplace(std::move(new_partition), Item{});
 			item.partitions.push_back(emplace_result.first->first.get());
 		}

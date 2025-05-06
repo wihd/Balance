@@ -32,8 +32,9 @@ public:
 	/// The information we store about weighings from a parition
 	struct Item
 	{
-		std::vector<const Weighing*> weighings;		// If computed the weighings applied to this partition
-		std::vector<const Partition*> partitions;	// If computed the outcome from each weighing
+		std::vector<const Weighing*> weighings;					// The weighings applied to this partition
+		std::vector<const PartitionProvenance*> provenances;	// For each weighing cache its provance vector
+		std::vector<const Partition*> partitions;				// Partition induced by applying this weighing
 	};
 	
 	/// Return a root partition (all coins in same part)
@@ -66,8 +67,9 @@ private:
 	/// Map giving root partitions we have made earlier (they are owned by cache)
 	std::map<uint8_t, const Partition*> roots;
 	
-	/// Set that owns our weighings - we expect the same weighing to occur in multiple partitions
+	/// Set that owns our weighings/provanences - we expect these vectors to frequently reoccur
 	std::set<std::unique_ptr<const Weighing>, PointerComparator<Weighing>> weighings_cache;
+	std::set<std::unique_ptr<const PartitionProvenance>, PointerComparator<PartitionProvenance>> provanences_cache;
 };
 
 #endif /* PartitionCache_hpp */

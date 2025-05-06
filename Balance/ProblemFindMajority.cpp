@@ -26,7 +26,8 @@ class Splitter
 {
 public:
 	Splitter(uint8_t index) : base_index(index) {}
-	
+	virtual ~Splitter() {}
+
 	// Specify number of H coins in distribution to be split
 	void set_count(uint8_t new_count) { count = new_count; }
 	
@@ -308,7 +309,7 @@ OutcomeArray<ProblemFindMajority::StateType> ProblemFindMajority::apply_weighing
 	return result;
 }
 
-bool ProblemFindMajority::is_resolved(const Partition& input_partition, const StateType& state)
+bool ProblemFindMajority::is_resolved(const Partition&, const StateType& state)
 {
 	// If there are no valid distributions then this state represents an impossible sequence of weighings
 	// In that case it is resolved

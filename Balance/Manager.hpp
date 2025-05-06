@@ -10,6 +10,8 @@
 
 #include <concepts>
 #include <memory>
+#include <algorithm>
+#include <cassert>
 #include "Types.h"
 #include "PartitionCache.hpp"
 
@@ -80,16 +82,13 @@ struct Node
 	// 2. There is a child weighing for which the problem is resolved (we store child+1)
 	// We store a sentinel value if the problem is not resolved
 	OutcomeArray<uint8_t> resolved_depth = { NOT_RESOLVED, NOT_RESOLVED, NOT_RESOLVED };
-};
-
-// Base class for the manager
-// This class holds parts of the manager that are independent of the problem
-// TODO: This class may be pointless
-class ManagerBase
-{
-public:
-private:
-	PartitionCache cache;
+	
+	// The node as a whole is resolved at the depth of its deepest outcome
+	uint8_t resolved_depth_all() const
+	{
+		// C++17 note: Have function to find largest member of any container
+		return std::max_element(resolved_depth.begin(), resolved_depth.end());
+	}
 };
 
 /**
@@ -111,15 +110,188 @@ private:
  The Manager knows the depth of each node, and how many lines have already been closed off.
  */
 template <Problem P>
-class Manager : public ManagerBase
+class Manager
 {
+	using NodeType = Node<typename P::StateType>;
+	
+	// Iterator used to navigate the tree of Nodes
+	class NodeIterator
+	{
+		// The iterator starts at the root of the tree
+		NodeIterator(PartitionCache& cache, uint8_t coin_count, Node<typename P::StateType>& root) :
+			cache(cache),
+			nodes{&root},
+			partitions{cache.get_root(coin_count)}
+		{}
+		
+		bool is_root() const { return nodes.size() == 1; }
+		size_t depth() const { return indexes.size(); }
+		NodeType& node() const { return *nodes.back(); }
+		std::pair<NodeType*, Outcome> ancestor(size_t height) const
+		{
+			// height = 0 returns immediate ancestor, so valid in range [0, depth).
+			return {nodes[nodes.size() - height - 2], outcomes[outcomes.size() - height - 1]};
+		}
+		const Partition& partition() const { return *partitions.back(); }
+		
+	private:
+		// We need the cache to interpret the nodes
+		PartitionCache& cache;
+
+		// The iterator points to back() node of the vector
+		// The back() partition is the partition of this node
+		// The other vectors (indexes, outcomes) are one shorter, and describe how we got to this partition
+		// Each time we transitioned from an earlier partition we did it by applying some weighing
+		// (given as an index number) to one of the outcomes from the earlier partition
+		std::vector<NodeType*> nodes;
+		std::vector<const Partition*> partitions;
+		std::vector<int> indexes;
+		std::vector<Outcome> outcomes;
+	};
+
 public:
-	Manager(P& p) : problem(p) {}
+	Manager(P& p) : problem(p)
+	{
+		// We initialize our root node
+		// Each node represents three possible states depending on the outcome of the previous weighing.
+		// Since the root does not come from a weighing two of its outcomes are not used.
+		// We will mark them as already resolved.
+		root.resolved_depth[Outcome::LeftHeavier] = 0;
+		root.resolved_depth[Outcome::RightHeavier] = 0;
+		
+		// The state of the third outcome is the one we are using - the problem tells us how to initialise it
+		// We may assume that the problem is not resolved - a problem resolved at the root is not interesting!
+		root.state[Outcome::Balances] = problem.make_root_data();
+	}
 	void solve(uint8_t coin_count);
 	
 private:
 	P& problem;
-	Node<typename P::StateType> root;
+	NodeType root;
+	PartitionCache cache;
+	
+	// Helper methods
+	void expand(const NodeIterator& node_it);
 };
+
+template <Problem P>
+void Manager<P>::expand(const NodeIterator& node_it)
+{
+	// Unless the computation is unhelpful, ensure that the children of this node are computed
+	
+	// It is possible that this node has an ancestor which is already resolved at such a depth that
+	// could not be improved even if this node has a weighing that resolves the problem immediately
+	// If that's the case we should not expand this node
+	size_t depth = node_it.depth();
+	for (size_t h = 0; h != depth; ++h)
+	{
+		auto [node, outcome] = node_it.ancestor(h);
+		if (node->resolved_depth[outcome] <= h + 2)
+		{
+			// Let d = absolute depth of this node.  We are looking at an ancestor with absolute depth d - h - 1.
+			// If ancestor is resolved at r, then the deepest resolved node on best path from the ancestor
+			// is at absolute depth d - h - 1 + r.
+			// If expanding this node finds an immediate child that is fully resolved then it will be at absolute
+			// depth d + 1.  This is the shallowest depth below this node where we might find a resolved node.
+			// So for descendents of this node to improve on the resolved depth of the ancestor we need
+			// d + 1 < d - h - 1 + r, i.e. we need h + 2 < r
+			// So if r <= h + 2 then expanding this node cannot lead to a shallower tree and we abort now
+			return;
+		}
+	}
+	
+	// Collect some values out of the outcome loop
+	auto& node = node_it.node();
+	auto& partition = node_it.partition();
+	auto& weighing_items = cache.get_weighings(*partition);
+	uint8_t original_resolved_depth = node.resolved_depth_all();
+
+	// Note that if all three of the outcomes at this node had resolved depth 0 then our immediate ancestor
+	// would already have resolved depth <= 1.  So we would already have exited in that case
+	assert(original_resolved_depth > 0);
+
+	// Consider each possible outcome of this node
+	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
+	{
+		// If the problem is already resolved for this outcome of the node do not expand it
+		// Just in case do not expand again if it is already expanded here
+		if (node.resolved_depth[outcome] != NOT_RESOLVED || node.children[outcome])
+		{
+			continue;
+		}
+		
+		// Allocate an array of nodes into which we will store the result
+		// C++14 Note: There is a specialization to allocate an array of node values
+		auto children = std::make_unique<NodeType[]>(weighing_items.weighings.size());
+		
+		// Loop over all of the weighings permitted from this partition
+		for (size_t i = 0; i != weighing_items.weighings.size(); ++i)
+		{
+			// Apply the problem to this weighing
+			children[i].state = problem.apply_weighing(partition,
+													   node.state[outcome],
+													   weighing_items.weighings[i],
+													   weighing_items.partitions[i],
+													   weighing_items.provenances[i]);
+			int resolved_count = 0;
+			for (int o = Outcome::Begin; o != Outcome::End; ++o)
+			{
+				if (problem.is_resolved(partition, children[i].state[o]))
+				{
+					++resolved_count;
+					children[i].resolved_depth[o] = 0;
+				}
+			}
+			
+			// If all possible outcomes for this weighing are immediately resolved, then we are now
+			// able to resolve our original node at depth 1
+			if (resolved_count == Outcome::Count)
+			{
+				node.resolved_depth[outcome] = 1;
+			}
+		}
+		node.children[outcome] = std::move(children);
+	}
+	
+	// As a result of the expansion it is possible that we might be able to reduce the resolved depth
+	// of ancestors of this node.  We will walk up the ancestor tree until we find a node that does not improve
+	if (original_resolved_depth > 1 && node.resolved_depth_all() == 1)
+	{
+		// Observe that since all we changed were nodes whose resolved depth used to be NOT_RESOLVED to 1
+		// the only possible change we could have made would be to make the resolved depth == 1 now.
+		// This corresponds to resolved depth of 2 for the first parent
+		uint8_t new_resolved_depth = 2;
+		
+		// Walk up the parents of this node
+		for (size_t h = 0; h != depth; ++h)
+		{
+			auto [n, o] = node_it.ancestor(h);
+			if (n->resolved_depth[o] <= new_resolved_depth)
+			{
+				// The ancestor's resolved depth for this outcome is not worse than new setting
+				// So there is nothing to change
+				break;
+			}
+			
+			// We will make a change here
+			auto start_resolved_all = n->resolved_depth_all();
+			n->resolved_depth[o] = new_resolved_depth;
+			
+			// Did this change reduce the combined resolved depth of this node
+			auto end_resolved_all = n->resolved_depth_all();
+			if (end_resolved_all > start_resolved_all)
+			{
+				// The expansion from other outcomes at this node means we did not improve outcome further
+				break;
+			}
+			
+			// The depth for next ancestor will be one more
+			// Note that this number does not need to be (h + 2) (but it cannot be less than h+2)
+			// Suppose we started with max{4, 3, 3}=4 and we reduced the 4 to 2.  The new result is max{2, 3, 3} = 3.
+			// This is why we need new_resolved_depth instead of just using h+2
+			new_resolved_depth = end_resolved_all + 1;
+		}
+	}
+}
 
 #endif /* Manager_hpp */

@@ -25,6 +25,9 @@ typedef enum : int {
  */
 struct PartProvenance
 {
+	// We need to be able to compare instances of this structure so we can totally order PartitionProvenance
+	auto operator<=>(const PartProvenance&) const = default;
+	
 	/// The part (of the base partition) used to obtain this part
 	int part;
 	

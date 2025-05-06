@@ -38,7 +38,7 @@ public:
 										   const Weighing& weighing,
 										   const Partition& output_partition,
 										   const PartitionProvenance& provanence);
-	bool is_resolved(const Partition& input_partition, const StateType& state);
+	bool is_resolved(const Partition&, const StateType& state);
 	
 private:
 	// Total number of coins
