@@ -22,19 +22,21 @@ constexpr uint8_t NOT_RESOLVED = 255;
 // It would have been simpler to just use an interface, but I want to have a go at concepts.
 template<typename T>
 concept Problem = requires(
-    T problem,									// problem is a parameter with type of class we are testing
-    const Partition& partition,					// parameter that specifies a partition
-    const Weighing& weighing,					// parameter that specifies a weighing
-    const PartitionProvenance& provanence,		// parameter that specifies a provanence
-    const typename T::StateType& state_value)	// parameter specifies value returned by apply_weighing
+    T problem,										// problem is a parameter with type of class we are testing
+    const Partition& partition,						// parameter that specifies a partition
+    const Weighing& weighing,						// parameter that specifies a weighing
+    const PartitionProvenance& provanence,			// parameter that specifies a provanence
+	const typename T::StateType state_value,		// parameter for the state type without a reference
+    const typename T::StateType& state_reference)	// parameter specifies value returned by apply_weighing
 {
 	// Specify that T has a typename parameter called StateType
 	// The problem will use this to track what it knows after some sequence of weighings and outcomes
 	typename T::StateType;
 	
 	// We initialise arrays of the state type and then move values into it
-	{ state_value } -> std::default_initializable;
-	{ state_value } -> std::movable;
+	// These requirements failed to compile - not clear why, so erase them for now
+	//	{ state_value } -> std::default_initializable;
+	//	{ state_value } -> std::movable;
 
 	// Problem must have a function to return the datatype value at the root of the tree
 	// Specify that T has a member function called make_root_data(...)
@@ -46,7 +48,7 @@ concept Problem = requires(
 	{ problem.apply_weighing
 		(
 		 partition,								// partition to which weighing is applied
-		 state_value,							// The state before this weighing
+		 state_reference,						// The state before this weighing
 		 weighing,								// the weighing we apply
 		 partition,								// partition generated as result of weighing
 		 provanence								// the provenance of parts in output partition
@@ -58,7 +60,7 @@ concept Problem = requires(
 	// - Ideally the problem is solved here
 	// - Possibly this state is impossible
 	// The manager does not care which of these - either way it need not explore further
-	{ problem.is_resolved(partition, state_value) } -> std::same_as<bool>;
+	{ problem.is_resolved(partition, state_reference) } -> std::same_as<bool>;
 };
 
 // Structure used to store information about a single node the manager is tracking
@@ -89,7 +91,7 @@ struct Node
 	uint8_t resolved_depth_all() const
 	{
 		// C++17 note: Have function to find largest member of any container
-		return std::max_element(resolved_depth.begin(), resolved_depth.end());
+		return *std::max_element(resolved_depth.begin(), resolved_depth.end());
 	}
 };
 
@@ -119,6 +121,7 @@ class Manager
 	// Iterator used to navigate the tree of Nodes
 	class NodeIterator
 	{
+	public:
 		// The iterator starts at the root of the tree
 		NodeIterator(PartitionCache& cache, uint8_t coin_count, Node<typename P::StateType>& root) :
 			cache(cache),
@@ -157,7 +160,7 @@ class Manager
 	};
 
 public:
-	Manager(P& p) : problem(p)
+	Manager(P& p, uint8_t coin_count) : problem(p), coin_count(coin_count)
 	{
 		// We initialize our root node
 		// Each node represents three possible states depending on the outcome of the previous weighing.
@@ -170,12 +173,13 @@ public:
 		// We may assume that the problem is not resolved - a problem resolved at the root is not interesting!
 		root.state[Outcome::Balances] = problem.make_root_data();
 	}
-	void solve(uint8_t coin_count);
+	void solve_breadth(uint8_t stop_depth);
 	
 private:
 	P& problem;
 	NodeType root;
 	PartitionCache cache;
+	uint8_t coin_count;
 	
 	// Helper methods
 	void expand(const NodeIterator& node_it);
@@ -197,10 +201,10 @@ bool Manager<P>::NodeIterator::advance_first_child()
 		if (node->children[outcome])
 		{
 			// The childrens array is never empty, so if we have an array it has a child
-			nodes.push_back(node->children[outcome][0].get());
+			nodes.push_back(&node->children[outcome][0]);
 			partitions.push_back(cache.get_weighings(partitions.back()).partitions[0]);
 			indexes.push_back(0);
-			outcomes.push_back(outcome);
+			outcomes.push_back(static_cast<Outcome>(outcome));
 			return true;
 		}
 	}
@@ -251,7 +255,7 @@ bool Manager<P>::NodeIterator::advance_sibling()
 	int next_index = indexes.back() + 1;
 	if (weighing_items.weighings.size() > next_index)
 	{
-		nodes.back() = node->children[outcome][next_index].get();
+		nodes.back() = &node->children[outcome][next_index];
 		partitions.back() = weighing_items.partitions[next_index];
 		indexes.back() = next_index;
 		// outcomes.back() is unchanged
@@ -264,14 +268,56 @@ bool Manager<P>::NodeIterator::advance_sibling()
 		if (node->children[outcome])
 		{
 			// If the children array exists then it is non-empty
-			nodes.back() = node->children[outcome][0].get();
+			nodes.back() = &node->children[outcome][0];
 			partitions.back() = weighing_items.partitions[0];
 			indexes.back() = 0;
-			outcomes.back() = outcome;
+			outcomes.back() = static_cast<Outcome>(outcome);
 			return true;
 		}
 	}
 	return false;
+}
+
+template<Problem P>
+void Manager<P>::solve_breadth(uint8_t stop_depth)
+{
+	// Solve the problem using a depth first search
+	// Expand the root node immediately - so we can use the root as a sentinel value
+	expand(NodeIterator(cache, coin_count, root));
+	
+	// Keep incrementing the depth searched, until the root node reports it is resolved
+	for (size_t depth = 1;
+		 root.resolved_depth[Outcome::Balances] == NOT_RESOLVED && depth != stop_depth;
+		 ++depth)
+	{
+		// We will walk through all of our nodes using an iterator
+		NodeIterator iterator(cache, coin_count, root);
+		
+		// When the iterator returns to the root we have completed a pass through
+		iterator.advance_first_child();
+		while (!iterator.is_root())
+		{
+			// Is the iterator at the correct depth?
+			if (iterator.depth() == depth)
+			{
+				expand(iterator);
+				
+				// Change the iterator, but do not visit any nodes added by this expansion
+				if (!iterator.advance_sibling())
+				{
+					iterator.advance_parent();
+				}
+			}
+			else
+			{
+				// Change the iterator, going deeper if possible
+				if (!iterator.advance_first_child() && !iterator.advance_sibling())
+				{
+					iterator.advance_parent();
+				}
+			}
+		}
+	}
 }
 
 template <Problem P>
@@ -303,7 +349,7 @@ void Manager<P>::expand(const NodeIterator& node_it)
 	// Collect some values out of the outcome loop
 	auto& node = node_it.node();
 	auto& partition = node_it.partition();
-	auto& weighing_items = cache.get_weighings(*partition);
+	auto& weighing_items = cache.get_weighings(&partition);
 	uint8_t original_resolved_depth = node.resolved_depth_all();
 
 	// Note that if all three of the outcomes at this node had resolved depth 0 then our immediate ancestor
@@ -330,9 +376,9 @@ void Manager<P>::expand(const NodeIterator& node_it)
 			// Apply the problem to this weighing
 			children[i].state = problem.apply_weighing(partition,
 													   node.state[outcome],
-													   weighing_items.weighings[i],
-													   weighing_items.partitions[i],
-													   weighing_items.provenances[i]);
+													   *weighing_items.weighings[i],
+													   *weighing_items.partitions[i],
+													   *weighing_items.provenances[i]);
 			int resolved_count = 0;
 			for (int o = Outcome::Begin; o != Outcome::End; ++o)
 			{
