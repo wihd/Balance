@@ -40,7 +40,7 @@ const PartitionCache::Item& PartitionCache::get_weighings(const Partition* parti
 			if (weighing_entry == weighings_cache.end())
 			{
 				// Cache a copy of this weighing to use within this execution
-				auto new_weighing = std::make_unique<Weighing>(**weighing_entry);
+				auto new_weighing = std::make_unique<Weighing>(weighing);
 				item.weighings.push_back(new_weighing.get());
 				weighings_cache.insert(std::move(new_weighing));
 			}

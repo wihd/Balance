@@ -13,7 +13,8 @@ int main(int argc, const char * argv[]) {
 	// insert code here...
 	std::cout << "Hello, World!\n";
 	
-	ProblemFindMajority problem(9);
-	Manager<ProblemFindMajority> manager(problem);
+	ProblemFindMajority problem(3);
+	Manager<ProblemFindMajority> manager(problem, 3);
+	manager.solve_breadth(3);
 	return 0;
 }
