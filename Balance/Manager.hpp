@@ -30,9 +30,11 @@ concept Problem = requires(
 {
 	// Specify that T has a typename parameter called StateType
 	// The problem will use this to track what it knows after some sequence of weighings and outcomes
-	// TODO: Do we need to specify additional constaints for this type?  E.g. is it assignable? default constructable?
-	// And if we do, we need to determine the correct syntax for it
 	typename T::StateType;
+	
+	// We initialise arrays of the state type and then move values into it
+	{ state_value } -> std::default_initializable;
+	{ state_value } -> std::movable;
 
 	// Problem must have a function to return the datatype value at the root of the tree
 	// Specify that T has a member function called make_root_data(...)
@@ -134,6 +136,11 @@ class Manager
 		}
 		const Partition& partition() const { return *partitions.back(); }
 		
+		// Modifiers
+		bool advance_first_child();
+		bool advance_parent();
+		bool advance_sibling();
+		
 	private:
 		// We need the cache to interpret the nodes
 		PartitionCache& cache;
@@ -173,6 +180,99 @@ private:
 	// Helper methods
 	void expand(const NodeIterator& node_it);
 };
+
+template <Problem P>
+bool Manager<P>::NodeIterator::advance_first_child()
+{
+	// Attempt to modify iterator by moving to its first expanded child
+	// Return true if made change
+	// return false if no children (and guarantee that iterator is not changed)
+	auto& node = nodes.back();
+
+	// We consider the nodes children to consist of all of its outcomes, taken together
+	// It is possible that first outcome was not expanded but second was expanded (because we do not expand
+	// a node if it is already resolved) so we consider each outcome before we give up
+	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
+	{
+		if (node->children[outcome])
+		{
+			// The childrens array is never empty, so if we have an array it has a child
+			nodes.push_back(node->children[outcome][0].get());
+			partitions.push_back(cache.get_weighings(partitions.back()).partitions[0]);
+			indexes.push_back(0);
+			outcomes.push_back(outcome);
+			return true;
+		}
+	}
+	return false;
+}
+
+template <Problem P>
+bool Manager<P>::NodeIterator::advance_parent()
+{
+	// Attempt to modify iterator by moving to its parent
+	// Return true if made change, or false if there was no parent (i.e. started at root)
+	// Promise iterator is not changed if it returns false
+	if (is_root())
+	{
+		return false;
+	}
+	else
+	{
+		nodes.pop_back();
+		partitions.pop_back();
+		indexes.pop_back();
+		outcomes.pop_back();
+		return true;
+	}
+}
+
+template <Problem P>
+bool Manager<P>::NodeIterator::advance_sibling()
+{
+	// Attempt to modify iterator by moving to a sibling node - that is the next existing node after the current
+	// node within its parent.  This method does NOT attempt to move to a cousin node
+	// Return true if made change
+	// return false if the node has no further sibling (iterator is not changed)
+	
+	// The root node has no siblings
+	if (is_root())
+	{
+		return false;
+	}
+	
+	// If we are not the root we must have a parent node to examine
+	auto parent_depth = nodes.size() - 2;
+	auto& node = nodes[parent_depth];
+	int outcome = outcomes.back();
+
+	// Does the current outcome have another child we have not visited yet?
+	auto& weighing_items = cache.get_weighings(partitions[parent_depth]);
+	int next_index = indexes.back() + 1;
+	if (weighing_items.weighings.size() > next_index)
+	{
+		nodes.back() = node->children[outcome][next_index].get();
+		partitions.back() = weighing_items.partitions[next_index];
+		indexes.back() = next_index;
+		// outcomes.back() is unchanged
+		return true;
+	}
+
+	// There might be another outcome, in which case we take its first child
+	for (++outcome; outcome != Outcome::End; ++outcome)
+	{
+		if (node->children[outcome])
+		{
+			// If the children array exists then it is non-empty
+			nodes.back() = node->children[outcome][0].get();
+			partitions.back() = weighing_items.partitions[0];
+			indexes.back() = 0;
+			outcomes.back() = outcome;
+			return true;
+		}
+	}
+	return false;
+}
 
 template <Problem P>
 void Manager<P>::expand(const NodeIterator& node_it)
