@@ -4,7 +4,6 @@
 //
 //  Created by William Hurwood on 4/30/25.
 //
-
 #ifndef Manager_hpp
 #define Manager_hpp
 
@@ -14,6 +13,7 @@
 #include <cassert>
 #include "Types.h"
 #include "PartitionCache.hpp"
+#include "Output.hpp"
 
 /// Sentinel depth value to represent a node at which we have not yet determined the depth
 constexpr uint8_t NOT_RESOLVED = 255;
@@ -174,6 +174,7 @@ public:
 		root.state[Outcome::Balances] = problem.make_root_data();
 	}
 	void solve_breadth(uint8_t stop_depth);
+	void write(Output& output);
 	
 private:
 	P& problem;
@@ -438,6 +439,12 @@ void Manager<P>::expand(const NodeIterator& node_it)
 			new_resolved_depth = end_resolved_all + 1;
 		}
 	}
+}
+
+template <Problem P>
+void Manager<P>::write(Output& output)
+{
+	output << "Hello World from Manager";
 }
 
 #endif /* Manager_hpp */
