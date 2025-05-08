@@ -13,6 +13,7 @@
 #include "Types.h"
 #include "WeighingIterator.hpp"
 class Weighing;
+class Output;
 
 /**
  Immutable class that describes how we have split the coins into parts.
@@ -44,6 +45,9 @@ public:
 	
 	/// Seninel iterator to detect end of weighings for partition
 	WeighingIterator end() const { return WeighingIterator(); }
+
+	/// Display a summary of this partition
+	void write(Output& output) const;
 
 private:
 	/// Store number of coins in each part for an implied order of the parts

@@ -5,8 +5,10 @@
 //  Created by William Hurwood on 4/25/25.
 //
 #include <cassert>
+#include <format>
 #include "Weighing.hpp"
 #include "Partition.hpp"
+#include "Output.hpp"
 
 /*
  When generating all of the possible weighings for a partition, we put them into following order:
@@ -403,4 +405,46 @@ void Weighing::fill_right(const Partition& partition, uint8_t count, size_t inde
 		count -= right[index];
 	}
 	assert(count == 0);
+}
+
+std::string write_pan_description(const std::vector<uint8_t> content, const Partition& partition)
+{
+	std::string result;
+	for (size_t i = 0; i != content.size(); ++i)
+	{
+		// Do not mention parts with no contribution
+		if (content[i] == 0)
+		{
+			continue;
+		}
+		if (!result.empty())
+		{
+			result += ", ";
+		}
+
+		// Special case for when we send entire part
+		if (content[i] == partition[i])
+		{
+			result += std::format("part[{}]", i);
+		}
+		else
+		{
+			result += std::format("{} / {} part[{}]", content[i], partition[i], i);
+		}
+	}
+	return result.empty() ? "Empty" : result;
+}
+
+void Weighing::write(Output& output, const Partition& partition) const
+{
+	std::vector<uint8_t> aside;
+	for (size_t i = 0; i != partition.size(); ++i)
+	{
+		aside.push_back(static_cast<uint8_t>(partition[i] - left[i] - right[i]));
+	}
+	
+	output.println("Weighing:  {{ Left: {};  Right: {};  Aside: {} }}",
+				   write_pan_description(left, partition),
+				   write_pan_description(right, partition),
+				   write_pan_description(aside, partition));
 }

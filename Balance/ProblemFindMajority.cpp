@@ -9,6 +9,7 @@
 #include <memory>
 #include <ranges>
 #include "ProblemFindMajority.hpp"
+#include "Output.hpp"
 
 // C++ 20 note: We assert that ProblemFindMajority can be used as a Problem
 static_assert(Problem<ProblemFindMajority>);
@@ -363,4 +364,11 @@ bool ProblemFindMajority::is_resolved(const Partition&, const StateType& state)
 	// All of the remaining distributions agreed on whether or not H was in the majority
 	// So the problem is solved after this sequence of weighings
 	return true;
+}
+
+void ProblemFindMajority::write_description(Output& output)
+{
+	// Output a description of the problem we want to solve
+	output.println("Problem:   Identify majority coin variety from {} coins, each variety has [{}, {}] coins",
+				   coin_count, minimum_count, maximum_count);
 }

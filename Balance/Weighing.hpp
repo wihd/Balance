@@ -12,6 +12,7 @@
 #include <numeric>
 #include "Types.h"
 class Partition;
+class Output;
 
 /**
  Class representing a single potenial weighing.
@@ -39,6 +40,9 @@ public:
 	
 	/// Switch to next weighing in standard order on the given partition
 	void advance(const Partition& partition);
+	
+	/// Display a summary of this weighing
+	void write(Output& output, const Partition& partition) const;
 
 private:
 	/// For each part in partition record the number of coins placed in left pan

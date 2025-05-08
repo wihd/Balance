@@ -18,6 +18,20 @@
 /// Sentinel depth value to represent a node at which we have not yet determined the depth
 constexpr uint8_t NOT_RESOLVED = 255;
 
+/// Format a resolved depth with special strings for most interesting values
+inline std::string format_resolved_depth(int depth)
+{
+	switch (depth)
+	{
+		case 0:
+			return "<Resolved Here>";
+		case NOT_RESOLVED:
+			return "<Not Resolved>";
+		default:
+			return std::format("<Longest path: {}>", depth);
+	}
+}
+
 // C++20 Note: We will use a concept to define a suitable Problem class
 // It would have been simpler to just use an interface, but I want to have a go at concepts.
 template<typename T>
@@ -26,6 +40,7 @@ concept Problem = requires(
     const Partition& partition,						// parameter that specifies a partition
     const Weighing& weighing,						// parameter that specifies a weighing
     const PartitionProvenance& provanence,			// parameter that specifies a provanence
+	Output& output,									// Object to which we can write output state
 	const typename T::StateType state_value,		// parameter for the state type without a reference
     const typename T::StateType& state_reference)	// parameter specifies value returned by apply_weighing
 {
@@ -61,6 +76,9 @@ concept Problem = requires(
 	// - Possibly this state is impossible
 	// The manager does not care which of these - either way it need not explore further
 	{ problem.is_resolved(partition, state_reference) } -> std::same_as<bool>;
+	
+	// We provide option to add a desription of the problem
+	{ problem.write_description(output) };
 };
 
 // Structure used to store information about a single node the manager is tracking
@@ -138,6 +156,11 @@ class Manager
 			return {nodes[nodes.size() - height - 2], outcomes[outcomes.size() - height - 1]};
 		}
 		const Partition& partition() const { return *partitions.back(); }
+		const Partition& partition(int index) const
+		{
+			return index >= 0 ? *partitions[index] : *partitions[partitions.size() + index];
+		}
+		int index() const { return indexes.back(); }
 		
 		// Modifiers
 		bool advance_first_child();
@@ -444,7 +467,53 @@ void Manager<P>::expand(const NodeIterator& node_it)
 template <Problem P>
 void Manager<P>::write(Output& output)
 {
-	output << "Hello World from Manager";
+	output << "Manager: {";
+	output.indent();
+	problem.write_description(output);
+	output.println("Level:     {}", format_resolved_depth(root.resolved_depth[Outcome::Balances]));
+	output << "Children:  {";
+	output.indent();
+	
+	// We will number each node as we visit it
+	int node_counter = 0;
+	NodeIterator node(cache, coin_count, root);
+	node.advance_first_child();
+	while (!node.is_root())
+	{
+		output.println("Node: {:>5}     depth={}", ++node_counter, node.depth());
+		output.indent();
+		auto& parent_partition = node.partition(-1);
+		auto& weighing_items = cache.get_weighings(&parent_partition);
+		weighing_items.weighings[node.index()]->write(output, parent_partition);
+		node.partition().write(output);
+		output.println("Outcomes:  Left: {};  Right: {};  Balances: {}",
+					   format_resolved_depth(node.node().resolved_depth[Outcome::LeftHeavier]),
+					   format_resolved_depth(node.node().resolved_depth[Outcome::RightHeavier]),
+					   format_resolved_depth(node.node().resolved_depth[Outcome::Balances]));
+		output.outdent();
+		
+		// Visit nodes in depth first order
+		if (node.advance_first_child())
+		{
+			output.indent();
+		}
+		else if (!node.advance_sibling())
+		{
+			while (node.advance_parent())
+			{
+				output.outdent();
+				if (node.advance_sibling())
+				{
+					break;
+				}
+			}
+		}
+	}
+	
+	// End the Manager object (note depth first outdented one more than it indented)
+	output << "}";
+	output.outdent();
+	output << "}";
 }
 
 #endif /* Manager_hpp */

@@ -7,6 +7,7 @@
 #include <cassert>
 #include "Partition.hpp"
 #include "Weighing.hpp"
+#include "Output.hpp"
 
 Partition::Partition(const PartitionProvenance& provenance, const Weighing& weighing, const Partition& base)
 {
@@ -43,4 +44,20 @@ Partition::Partition(const PartitionProvenance& provenance, const Weighing& weig
 	
 	// Both partitions should have same size
 	assert(coin_count() == base.coin_count());
+}
+
+void Partition::write(Output& output) const
+{
+	std::string result;
+	for (auto p : parts)
+	{
+		if (!result.empty())
+		{
+			result += " ";
+		}
+		result += std::to_string(p);
+	}
+	
+	output.println("Partition: {{ {} part{};  Sizes: [{}] }}",
+				   parts.size(), parts.size() == 1 ? "" : "s", result);
 }

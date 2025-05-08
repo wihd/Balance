@@ -14,6 +14,7 @@
 
 #include <vector>
 #include "Manager.hpp"
+class Output;
 
 /**
  For each part we track the numbers of H coins that could be present in the part to be consistent with
@@ -39,6 +40,7 @@ public:
 										   const Partition& output_partition,
 										   const PartitionProvenance& provanence);
 	bool is_resolved(const Partition&, const StateType& state);
+	void write_description(Output& output);
 	
 private:
 	// Total number of coins

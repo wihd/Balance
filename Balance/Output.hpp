@@ -35,7 +35,7 @@ public:
 	Output& println(std::format_string<Args...> fmt, Args&&... args)
 	{
 		// Support formatted output of a line
-		return operator<<(std::format(fmt, std::forward(args...)));
+		return operator<<(std::format(fmt, std::forward<Args>(args)...));
 	}
 
 private:
