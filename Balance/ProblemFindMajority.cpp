@@ -295,6 +295,10 @@ OutcomeArray<ProblemFindMajority::StateType> ProblemFindMajority::apply_weighing
 					{
 						(*it)->restart(current);
 					}
+					
+					// Break to leave any remaining splitters in place
+					// Also we must leave advance_splitter pointing to an actual splitter
+					break;
 				}
 			}
 		}
