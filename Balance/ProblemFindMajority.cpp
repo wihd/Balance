@@ -37,10 +37,14 @@ public:
 	// It the iterator is currently pointing to a valid split of the count assign it into the distribution, then
 	// advance the iterator and return true
 	// Alternatively return false
-	virtual bool advance(ProblemFindMajority::Distribution& distribution) = 0;
+	virtual bool advance(ProblemFindMajority::Distribution& distribution, const Partition& output_partition) = 0;
 	
 	// Reset the splitter and immediately advance to its first entry
-	void restart(ProblemFindMajority::Distribution& distribution) { reset(); advance(distribution); }
+	void restart(ProblemFindMajority::Distribution& distribution, const Partition& output_partition)
+	{
+		reset();
+		advance(distribution, output_partition);
+	}
 
 protected:
 	int base_index;			// First output index used by this splitter
@@ -53,15 +57,16 @@ class SplitterOne : public Splitter
 public:
 	SplitterOne(int part_index) : Splitter(part_index) {}
 	void reset() override { has_visited = false; }
-	bool advance(ProblemFindMajority::Distribution& distribution) override;
+	bool advance(ProblemFindMajority::Distribution& distribution, const Partition& output_partition) override;
 	
 private:
 	bool has_visited = false;
 };
 
-bool SplitterOne::advance(ProblemFindMajority::Distribution& distribution)
+bool SplitterOne::advance(ProblemFindMajority::Distribution& distribution, const Partition&)
 {
 	// Since there is only one way to split the input, all we care about is whether this is first invocation or not
+	// The output_partition is ignored, since input and output part size must be identical
 	if (has_visited)
 	{
 		return false;
@@ -80,21 +85,25 @@ class SplitterTwo : public Splitter
 public:
 	SplitterTwo(int first_part_index) : Splitter(first_part_index) {}
 	void reset() override { next_a_count = 0; }
-	bool advance(ProblemFindMajority::Distribution& distribution) override;
+	bool advance(ProblemFindMajority::Distribution& distribution, const Partition& output_partition) override;
 	
 private:
 	uint8_t next_a_count = 0;
 };
 
-bool SplitterTwo::advance(ProblemFindMajority::Distribution& distribution)
+bool SplitterTwo::advance(ProblemFindMajority::Distribution& distribution, const Partition& partition)
 {
 	// Is the next distribution viable?
-	if (next_a_count <= count)
+	// We must reject the distribution if it puts more H coins into a part than there are coins in the part
+	while (next_a_count <= count)
 	{
 		distribution[base_index] = next_a_count;
 		distribution[base_index+1] = count - next_a_count;
 		++next_a_count;
-		return true;
+		if (distribution[base_index] <= partition[base_index] && distribution[base_index+1] <= partition[base_index+1])
+		{
+			return true;
+		}
 	}
 	return false;
 }
@@ -105,17 +114,18 @@ class SplitterThree : public Splitter
 public:
 	SplitterThree(int first_part_index) : Splitter(first_part_index) {}
 	void reset() override { next_a_count = 0; next_b_count = 0; }
-	bool advance(ProblemFindMajority::Distribution& distribution) override;
+	bool advance(ProblemFindMajority::Distribution& distribution, const Partition& output_partition) override;
 	
 private:
 	uint8_t next_a_count = 0;
 	uint8_t next_b_count = 0;
 };
 
-bool SplitterThree::advance(ProblemFindMajority::Distribution& distribution)
+bool SplitterThree::advance(ProblemFindMajority::Distribution& distribution, const Partition& partition)
 {
 	// Is the next distribution viable?
-	if (next_a_count + next_b_count <= count)
+	// We must reject the distribution if it puts more H coins into a part than there are coins in the part
+	while (next_a_count + next_b_count <= count)
 	{
 		distribution[base_index] = next_a_count;
 		distribution[base_index+1] = next_b_count;
@@ -128,12 +138,15 @@ bool SplitterThree::advance(ProblemFindMajority::Distribution& distribution)
 			next_a_count = 0;
 			++next_b_count;
 		}
-		return true;
+		if (distribution[ base_index ] <= partition[ base_index ] &&
+			distribution[base_index+1] <= partition[base_index+1] &&
+			distribution[base_index+2] <= partition[base_index+2])
+		{
+			return true;
+		}
 	}
 	return false;
 }
-
-
 
 
 // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -240,7 +253,7 @@ OutcomeArray<ProblemFindMajority::StateType> ProblemFindMajority::apply_weighing
 		// Restart all of the splitters (which will overwrite all entries in `current` to a valid output distribution)
 		for (auto& splitter : splitters)
 		{
-			splitter->restart(current);
+			splitter->restart(current, output_partition);
 		}
 		
 		// Each time we go round this loop we will have a new distribution
@@ -286,14 +299,14 @@ OutcomeArray<ProblemFindMajority::StateType> ProblemFindMajority::apply_weighing
 			for (advanced_splitter = splitters.begin(); advanced_splitter != splitters.end(); ++advanced_splitter)
 			{
 				// Are we able to advance this splitter?
-				if ((*advanced_splitter)->advance(current))
+				if ((*advanced_splitter)->advance(current, output_partition))
 				{
 					// All the splitters that had finished must be restarted
 					// Note that since all the splitters write into different parts of current it does not
 					// matter that we advanced them in uneven order
 					for (auto it = splitters.begin(); it != advanced_splitter; ++it)
 					{
-						(*it)->restart(current);
+						(*it)->restart(current, output_partition);
 					}
 					
 					// Break to leave any remaining splitters in place
