@@ -40,7 +40,9 @@ public:
 										   const Partition& output_partition,
 										   const PartitionProvenance& provanence);
 	bool is_resolved(const Partition&, const StateType& state);
+	bool is_impossible(const Partition&, const StateType& state) { return state.empty(); }
 	void write_description(Output& output);
+	void write_solved_node(Output& output, const Partition&, const StateType& state, const char* outcome_name);
 	
 private:
 	// Total number of coins

@@ -419,17 +419,17 @@ std::string write_pan_description(const std::vector<uint8_t> content, const Part
 		}
 		if (!result.empty())
 		{
-			result += ", ";
+			result += "+";
 		}
 
 		// Special case for when we send entire part
 		if (content[i] == partition[i])
 		{
-			result += std::format("part[{}]", i);
+			result += std::format("p[{}]", i);
 		}
 		else
 		{
-			result += std::format("{} / {} part[{}]", content[i], partition[i], i);
+			result += std::format("p[{}]({}/{})", i, content[i], partition[i]);
 		}
 	}
 	return result.empty() ? "Empty" : result;

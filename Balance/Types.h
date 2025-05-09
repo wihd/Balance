@@ -58,4 +58,7 @@ typedef enum : int {
 template <class D>
 using OutcomeArray = std::array<D, Outcome::Count>;
 
+/// Provide constant array giving display names for each outcome (all padded to same length)
+constexpr OutcomeArray<const char*> outcome_names{ "Left:     ", "Right:    ", "Balanced: " };
+
 #endif /* Types_h */

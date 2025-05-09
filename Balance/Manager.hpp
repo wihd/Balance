@@ -41,6 +41,7 @@ concept Problem = requires(
     const Weighing& weighing,						// parameter that specifies a weighing
     const PartitionProvenance& provanence,			// parameter that specifies a provanence
 	Output& output,									// Object to which we can write output state
+	const char* name,								// For output, sometimes pass in a name string
 	const typename T::StateType state_value,		// parameter for the state type without a reference
     const typename T::StateType& state_reference)	// parameter specifies value returned by apply_weighing
 {
@@ -77,8 +78,12 @@ concept Problem = requires(
 	// The manager does not care which of these - either way it need not explore further
 	{ problem.is_resolved(partition, state_reference) } -> std::same_as<bool>;
 	
-	// We provide option to add a desription of the problem
+	// Sometimes we might want to distinguish between impossible and solved
+	{ problem.is_impossible(partition, state_reference) } -> std::same_as<bool>;
+	
+	// We provide multiple options to add a desription of the problem or of a state of the problem
 	{ problem.write_description(output) };
+	{ problem.write_solved_node(output, partition, state_reference, name) };
 };
 
 // Structure used to store information about a single node the manager is tracking
@@ -208,6 +213,7 @@ private:
 	
 	// Helper methods
 	void expand(const NodeIterator& node_it);
+	void write_node(Output& output, NodeIterator& node, int& node_counter);
 };
 
 template <Problem P>
@@ -489,17 +495,7 @@ void Manager<P>::write(Output& output)
 	node.advance_first_child();
 	while (!node.is_root())
 	{
-		output.println("Node: {:>5}     depth={}", ++node_counter, node.depth());
-		output.indent();
-		auto& parent_partition = node.partition(-1);
-		auto& weighing_items = cache.get_weighings(&parent_partition);
-		weighing_items.weighings[node.index()]->write(output, parent_partition);
-		node.partition().write(output);
-		output.println("Outcomes:  Left: {};  Right: {};  Balances: {}",
-					   format_resolved_depth(node.node().resolved_depth[Outcome::LeftHeavier]),
-					   format_resolved_depth(node.node().resolved_depth[Outcome::RightHeavier]),
-					   format_resolved_depth(node.node().resolved_depth[Outcome::Balances]));
-		output.outdent();
+		write_node(output, node, node_counter);
 		
 		// Visit nodes in depth first order
 		if (node.advance_first_child())
@@ -521,6 +517,53 @@ void Manager<P>::write(Output& output)
 	
 	// End the Manager object (note depth first outdented one more than it indented)
 	output << "}";
+	output.outdent();
+	output << "}";
+}
+
+template <Problem P>
+void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counter)
+{
+	// Write out information for this node and its descendants
+	// On exit we expect both the indentation and node iterator to be at their entry value
+	// although both of them may have changed during the function
+	assert(!node.is_root());
+
+	// Identify the node
+	output.println("Node: {:>5}     depth={:<2} {{", ++node_counter, node.depth());
+	output.indent();
+
+	// Specify information that applies to node as a whole - its weighing, its induced partition, its resolved levels
+	auto& node_ref = node.node();
+	auto& parent_partition = node.partition(-1);
+	auto& weighing_items = cache.get_weighings(&parent_partition);
+	weighing_items.weighings[node.index()]->write(output, parent_partition);
+	node.partition().write(output);
+	output.println("Outcomes:  Left: {};  Right: {};  Balances: {}",
+				   format_resolved_depth(node_ref.resolved_depth[Outcome::LeftHeavier]),
+				   format_resolved_depth(node_ref.resolved_depth[Outcome::RightHeavier]),
+				   format_resolved_depth(node_ref.resolved_depth[Outcome::Balances]));
+
+	// We generate information for each of the three outcomes
+	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
+	{
+		// If outcome is impossible there is nothing more to be said about it
+		if (problem.is_impossible(node.partition(), node_ref.state[outcome]))
+		{
+			output.println("{} <Cannot occur>", outcome_names[outcome]);
+			continue;
+		}
+		
+		// If the node is resolved for this outcome, but not impossible then it must have been solved
+		// The problem has a method to display a solved node (which can decide how many lines to use)
+		if (node_ref.resolved_depth[outcome] == 0)
+		{
+			problem.write_solved_node(output, node.partition(), node_ref.state[outcome], outcome_names[outcome]);
+			continue;
+		}
+	}
+
+	// The node is over
 	output.outdent();
 	output << "}";
 }

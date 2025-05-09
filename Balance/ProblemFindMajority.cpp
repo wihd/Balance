@@ -372,3 +372,38 @@ void ProblemFindMajority::write_description(Output& output)
 	output.println("Problem:   Identify majority coin variety from {} coins, each variety has [{}, {}] coins",
 				   coin_count, minimum_count, maximum_count);
 }
+
+void ProblemFindMajority::write_solved_node(Output& output,
+											const Partition& partition,
+											const StateType& state,
+											const char* outcome_name)
+{
+	// Output a description of why a node is solved
+	// We should introduce the description with the given outcome name
+	assert(!state.empty());
+	assert(is_resolved(partition, state));
+	
+	// If there is only one description we will write it on one line
+	if (state.size() == 1)
+	{
+		output.println("{} <Solved: Majority {}>  Heavy-Coins-per-Part: {}",
+					   outcome_name,
+					   is_majority(state[0]) ? "Heavy" : "Light",
+					   state[0]);
+	}
+	else
+	{
+		// We need multiple lines to describe the state
+		output.println("{} <Majority {}>  Multiple-Distributions: {} {{",
+					   outcome_name,
+					   is_majority(state[0]) ? "Heavy" : "Light",
+					   state.size());
+		output.indent();
+		for (auto& distribution : state)
+		{
+			output.println("Heavy-Coins-per-Part: {}", distribution);
+		}
+		output.outdent();
+		output << "}";
+	}
+}

@@ -48,16 +48,7 @@ Partition::Partition(const PartitionProvenance& provenance, const Weighing& weig
 
 void Partition::write(Output& output) const
 {
-	std::string result;
-	for (auto p : parts)
-	{
-		if (!result.empty())
-		{
-			result += " ";
-		}
-		result += std::to_string(p);
-	}
-	
-	output.println("Partition: {{ {} part{};  Sizes: [{}] }}",
-				   parts.size(), parts.size() == 1 ? "" : "s", result);
+	// C++20 Note: Built in support for formatting vectors (and other ranges)
+	output.println("Partition: {{ {} part{};  Sizes: {} }}",
+				   parts.size(), parts.size() == 1 ? "" : "s", parts);
 }
