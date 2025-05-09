@@ -532,7 +532,7 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 
 	// Specify information that applies to node as a whole - its weighing, its induced partition, its resolved levels
 	auto& node_ref = node.node();
-	auto& parent_partition = node.partition(-1);
+	auto& parent_partition = node.partition(-2);
 	auto& weighing_items = cache.get_weighings(&parent_partition);
 	auto& partition = node.partition();
 	weighing_items.weighings[node.index()]->write(output, parent_partition);
