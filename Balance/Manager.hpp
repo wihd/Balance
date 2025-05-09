@@ -167,6 +167,7 @@ class Manager
 			return index >= 0 ? *partitions[index] : *partitions[partitions.size() + index];
 		}
 		int index() const { return indexes.back(); }
+		Outcome outcome() const { return outcomes.back(); }
 		
 		// Modifiers
 		bool advance_first_child();
@@ -486,38 +487,33 @@ void Manager<P>::write(Output& output)
 	output << "Manager: {";
 	output.indent();
 	problem.write_description(output);
-	output.println("Level:     {}", format_resolved_depth(root.resolved_depth[Outcome::Balances]));
-	output << "Children:  {";
-	output.indent();
+	output.println("Outcome:   {}", format_resolved_depth(root.resolved_depth[Outcome::Balances]));
 	
-	// We will number each node as we visit it
-	int node_counter = 0;
+	// The root node has no weighing, but we can give it a default partition and an initial state
 	NodeIterator node(cache, coin_count, root);
-	node.advance_first_child();
-	while (!node.is_root())
-	{
-		write_node(output, node, node_counter);
-		
-		// Visit nodes in depth first order
-		if (node.advance_first_child())
-		{
-			output.indent();
-		}
-		else if (!node.advance_sibling())
-		{
-			while (node.advance_parent())
-			{
-				output.outdent();
-				if (node.advance_sibling())
-				{
-					break;
-				}
-			}
-		}
-	}
+	auto& partition = node.partition();
+	partition.write(output);
+	problem.write_ambiguous_state(output, partition, node.node().state[Outcome::Balances]);
 	
-	// End the Manager object (note depth first outdented one more than it indented)
-	output << "}";
+	// Usually there will be child nodes
+	if (node.advance_first_child())
+	{
+		int node_counter = 0;
+		output << "Children:  {";
+		output.indent();
+
+		// Loop over the children - we know there is at least one
+		do
+		{
+			write_node(output, node, node_counter);
+		} while (node.advance_sibling());
+
+		// Close the Children scope
+		output.outdent();
+		output << "}";
+	}
+
+	// End the Manager object
 	output.outdent();
 	output << "}";
 }
@@ -538,18 +534,22 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 	auto& node_ref = node.node();
 	auto& parent_partition = node.partition(-1);
 	auto& weighing_items = cache.get_weighings(&parent_partition);
+	auto& partition = node.partition();
 	weighing_items.weighings[node.index()]->write(output, parent_partition);
-	node.partition().write(output);
+	partition.write(output);
 	output.println("Outcomes:  Left: {};  Right: {};  Balances: {}",
 				   format_resolved_depth(node_ref.resolved_depth[Outcome::LeftHeavier]),
 				   format_resolved_depth(node_ref.resolved_depth[Outcome::RightHeavier]),
 				   format_resolved_depth(node_ref.resolved_depth[Outcome::Balances]));
+	
+	// Switch the iterator to look at the children of this node
+	bool has_children = node.advance_first_child();
 
 	// We generate information for each of the three outcomes
 	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
 	{
 		// If outcome is impossible there is nothing more to be said about it
-		if (problem.is_impossible(node.partition(), node_ref.state[outcome]))
+		if (problem.is_impossible(partition, node_ref.state[outcome]))
 		{
 			output.println("{} <Cannot occur>", outcome_names[outcome]);
 			continue;
@@ -559,18 +559,33 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 		// The problem has a method to display a solved node (which can decide how many lines to use)
 		if (node_ref.resolved_depth[outcome] == 0)
 		{
-			problem.write_solved_node(output, node.partition(), node_ref.state[outcome], outcome_names[outcome]);
+			problem.write_solved_node(output, partition, node_ref.state[outcome], outcome_names[outcome]);
 			continue;
 		}
 		
 		// Otherwise we will start a block for this outcome
 		output.println("{} {{", outcome_names[outcome]);
 		output.indent();
-		problem.write_ambiguous_state(output, node.partition(), node_ref.state[outcome]);
+		problem.write_ambiguous_state(output, partition, node_ref.state[outcome]);
+		
+		// Now we list the child nodes of this specific outcome by invoking this function recursively
+		if (has_children)
+		{
+			bool fresh_child = true;
+			while (fresh_child && node.outcome() == outcome)
+			{
+				write_node(output, node, node_counter);
+				fresh_child = node.advance_sibling();
+			}
+		}
 		output.outdent();
 	}
 
-	// The node is over
+	// This node is over - reset our state
+	if (has_children)
+	{
+		node.advance_parent();
+	}
 	output.outdent();
 	output << "}";
 }
