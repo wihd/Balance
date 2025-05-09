@@ -84,6 +84,7 @@ concept Problem = requires(
 	// We provide multiple options to add a desription of the problem or of a state of the problem
 	{ problem.write_description(output) };
 	{ problem.write_solved_node(output, partition, state_reference, name) };
+	{ problem.write_ambiguous_state(output, partition, state_reference) };
 };
 
 // Structure used to store information about a single node the manager is tracking
@@ -561,6 +562,12 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 			problem.write_solved_node(output, node.partition(), node_ref.state[outcome], outcome_names[outcome]);
 			continue;
 		}
+		
+		// Otherwise we will start a block for this outcome
+		output.println("{} {{", outcome_names[outcome]);
+		output.indent();
+		problem.write_ambiguous_state(output, node.partition(), node_ref.state[outcome]);
+		output.outdent();
 	}
 
 	// The node is over

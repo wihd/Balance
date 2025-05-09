@@ -407,3 +407,37 @@ void ProblemFindMajority::write_solved_node(Output& output,
 		output << "}";
 	}
 }
+
+void ProblemFindMajority::write_ambiguous_state(Output& output, const Partition&, const StateType& state)
+{
+	// The caller provides a state (and corresponding partition although not needed here)
+	// The caller already knows (via other calls to the problem) that there is insufficient information
+	// in the state to solve the problem.  We generate a text description stating what we known
+	int count_minority = 0;
+	int count_majority = 0;
+	for (auto& d : state)
+	{
+		if (is_majority(d))
+		{
+			++count_majority;
+		}
+		else
+		{
+			++count_minority;
+		}
+	}
+	
+	// We always display it with multiple lines
+	// We don't provide an outcome name - the assumption is that we will also report information about children
+	output.println("State:     Ambiguous: Heavy Majority: {};  Light Majority: {}  {{",
+				   count_majority, count_minority);
+	output.indent();
+	for (auto& distribution : state)
+	{
+		output.println("{} Majority with Heavy-Coins-per-Part: {}",
+					   is_majority(distribution) ? "Heavy" : "Light",
+					   distribution);
+	}
+	output.outdent();
+	output << "}";
+}

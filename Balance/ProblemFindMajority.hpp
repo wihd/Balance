@@ -43,6 +43,7 @@ public:
 	bool is_impossible(const Partition&, const StateType& state) { return state.empty(); }
 	void write_description(Output& output);
 	void write_solved_node(Output& output, const Partition&, const StateType& state, const char* outcome_name);
+	void write_ambiguous_state(Output& output, const Partition&, const StateType& state);
 	
 private:
 	// Total number of coins
