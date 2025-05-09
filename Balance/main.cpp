@@ -8,11 +8,13 @@
 #include "ProblemFindMajority.hpp"
 #include "Output.hpp"
 
+constexpr uint8_t coint_count = 5;
+
 int main(int argc, const char * argv[]) {
 	// Solve a problem
-	ProblemFindMajority problem(3);
-	Manager<ProblemFindMajority> manager(problem, 3);
-	manager.solve_breadth(3);
+	ProblemFindMajority problem(coint_count);
+	Manager<ProblemFindMajority> manager(problem, coint_count);
+	manager.solve_breadth(4);
 	
 	// Output our state
 	Output output{};

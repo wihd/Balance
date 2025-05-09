@@ -166,6 +166,7 @@ class Manager
 		bool advance_first_child();
 		bool advance_parent();
 		bool advance_sibling();
+		void advance_prune();
 		
 	private:
 		// We need the cache to interpret the nodes
@@ -302,6 +303,17 @@ bool Manager<P>::NodeIterator::advance_sibling()
 	return false;
 }
 
+template <Problem P>
+inline void Manager<P>::NodeIterator::advance_prune()
+{
+	// We attempt to advance the iterator as little as possible, without ever reaching a child
+	// to obtain a new node.  This means it will call advance_parent() zero or more times, followed
+	// by a sucessful call to advance_sibling().
+	// This method will place the iterator on the root if it cannot find another node
+	while (!advance_sibling() && advance_parent())
+	{}
+}
+
 template<Problem P>
 void Manager<P>::solve_breadth(uint8_t stop_depth)
 {
@@ -327,17 +339,14 @@ void Manager<P>::solve_breadth(uint8_t stop_depth)
 				expand(iterator);
 				
 				// Change the iterator, but do not visit any nodes added by this expansion
-				if (!iterator.advance_sibling())
-				{
-					iterator.advance_parent();
-				}
+				iterator.advance_prune();
 			}
 			else
 			{
 				// Change the iterator, going deeper if possible
-				if (!iterator.advance_first_child() && !iterator.advance_sibling())
+				if (!iterator.advance_first_child())
 				{
-					iterator.advance_parent();
+					iterator.advance_prune();
 				}
 			}
 		}
