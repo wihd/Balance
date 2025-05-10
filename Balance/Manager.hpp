@@ -464,9 +464,9 @@ void Manager<P>::expand(const NodeIterator& node_it)
 			auto start_resolved_all = n->resolved_depth_all();
 			n->resolved_depth[o] = new_resolved_depth;
 			
-			// Did this change reduce the combined resolved depth of this node
+			// Did this change reduce the combined resolved depth of this node (it cannot increase depth)
 			auto end_resolved_all = n->resolved_depth_all();
-			if (end_resolved_all > start_resolved_all)
+			if (end_resolved_all == start_resolved_all)
 			{
 				// The expansion from other outcomes at this node means we did not improve outcome further
 				break;
@@ -528,7 +528,7 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 
 	// Identify the node
 	int my_node_id = ++node_counter;
-	output.println("Node: {:>5}   depth={:<2}   parent={}   {{",
+	output.println("Node: #{:<8} depth={:<4} parent={}  {{",
 				   my_node_id,
 				   node.depth(),
 				   parent_id == 0 ? "Root" : std::to_string(parent_id));
@@ -583,7 +583,7 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 			}
 		}
 		output.outdent();
-		output.println("}}    // {}", outcome_names[outcome]);
+		output.println("}}    // {} (for node {})", outcome_names[outcome], my_node_id);
 	}
 
 	// This node is over - reset our state
