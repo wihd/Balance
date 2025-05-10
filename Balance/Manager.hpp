@@ -423,7 +423,20 @@ void Manager<P>::expand(const NodeIterator& node_it)
 			int resolved_count = 0;
 			for (int o = Outcome::Begin; o != Outcome::End; ++o)
 			{
-				if (problem.is_resolved(partition, children[i].state[o]))
+				// Since the balance is symmetric it means that we do not need to consider case
+				// where we select the same coins but reverse which of them are put in which pan.
+				// In most cases such paired selections are handled by omitting potential weighings
+				// from the list of weighings.  (If two distinct weighings are mapped together by reflection
+				// only one of them is included in the list of weighing.)  But some weighings are fixed
+				// under reflection.  These weighings are included in list of weighings.  But for them
+				// there is no point in considering both Left and Right outcomes.  If the problem
+				// is solved for Left it will be solved for Right as well by reflection.
+				// Very few weighings are symmetric, but weighings applied to the root are always
+				// symmetric.  So this optimisation does cut out at least 1/3 of potential nodes
+				// and so is worth implementing.
+				// Alternatively the outcome might be resolved by the problem
+				if ((o == Outcome::RightHeavier && weighing_items.weighings[i]->is_symmetric())
+					|| problem.is_resolved(partition, children[i].state[o]))
 				{
 					++resolved_count;
 					children[i].resolved_depth[o] = 0;
@@ -552,6 +565,14 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 	// We generate information for each of the three outcomes
 	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
 	{
+		// Report if we pruned the branch because of symmetric weighing
+		if (outcome == Outcome::RightHeavier && weighing_items.weighings[node.index()]->is_symmetric())
+		{
+			output.println("{} <Pruned - weighing is symmetric so covered by 'Left' case>",
+						   outcome_names[outcome]);
+			continue;
+		}
+		
 		// If outcome is impossible there is nothing more to be said about it
 		if (problem.is_impossible(partition, node_ref.state[outcome]))
 		{

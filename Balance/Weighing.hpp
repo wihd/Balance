@@ -38,6 +38,17 @@ public:
 	/// Describe the partition induced by applying this weighing to a base partition
 	PartitionProvenance compute_provenance(const Partition& base) const;
 	
+	/// A symmetric weighing is one where swapping right and left pan gives the same weighing
+	/// It is important because we only need consider one non-balanced outcome from it
+	/// Thus if the problem can be solved from Left and Balanced outcomes then by symmetry it can also
+	/// be solved for Right outcomes, so they may be ignored
+	bool is_symmetric() const
+	{
+		// Its easy to recognise a symmetric weighing
+		// It happens if and only if both left and right pans take same number of coins from each part
+		return left == right;
+	}
+
 	/// Switch to next weighing in standard order on the given partition
 	void advance(const Partition& partition);
 	
