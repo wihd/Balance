@@ -5,6 +5,7 @@
 //  Created by William Hurwood on 4/25/25.
 //
 #include <cassert>
+#include <format>
 #include "Partition.hpp"
 #include "Weighing.hpp"
 #include "Output.hpp"
@@ -46,9 +47,41 @@ Partition::Partition(const PartitionProvenance& provenance, const Weighing& weig
 	assert(coin_count() == base.coin_count());
 }
 
-void Partition::write(Output& output) const
+void Partition::write(Output& output, const PartitionProvenance* provenance) const
 {
-	// C++20 Note: Built in support for formatting vectors (and other ranges)
-	output.println("Partition: {{ {} part{};  Sizes: {} }}",
-				   parts.size(), parts.size() == 1 ? "" : "s", parts);
+	// Optionally caller may provide a provenance vector
+	if (provenance)
+	{
+		// Each part consists of the members of some input part that were sent to some bucket
+		// Count for each input part how many ways it is divided
+		// We know there cannot be more input parts than output parts
+		std::vector<int> counters(parts.size());
+		for (auto& p : *provenance)
+		{
+			counters[p.part] += 1;
+		}
+		
+		std::vector<std::string> part_provenances;
+		for (auto& p : *provenance)
+		{
+			if (counters[p.part] == 1)
+			{
+				part_provenances.push_back(std::format("p[{}]", p.part));
+			}
+			else
+			{
+				part_provenances.push_back(std::format("p[{}]@{}", p.part, placement_names[p.placement]));
+			}
+		}
+
+		// C++ 20 Note: The {::s} format makes it omit string delimiters around the parts
+		output.println("Partition: {{ {} part{};  Sizes: {};  Provenances: {::s} }}",
+					   parts.size(), parts.size() == 1 ? "" : "s", parts, part_provenances);
+	}
+	else
+	{
+		// C++20 Note: Built in support for formatting vectors (and other ranges)
+		output.println("Partition: {{ {} part{};  Sizes: {} }}",
+					   parts.size(), parts.size() == 1 ? "" : "s", parts);
+	}
 }

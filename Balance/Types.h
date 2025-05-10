@@ -60,5 +60,6 @@ using OutcomeArray = std::array<D, Outcome::Count>;
 
 /// Provide constant array giving display names for each outcome (all padded to same length)
 constexpr OutcomeArray<const char*> outcome_names{ "Left:     ", "Right:    ", "Balanced: " };
+constexpr OutcomeArray<const char*> placement_names { "Left", "Right", "Aside" };
 
 #endif /* Types_h */

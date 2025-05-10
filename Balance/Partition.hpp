@@ -47,7 +47,7 @@ public:
 	WeighingIterator end() const { return WeighingIterator(); }
 
 	/// Display a summary of this partition
-	void write(Output& output) const;
+	void write(Output& output, const PartitionProvenance* provenance = nullptr) const;
 
 private:
 	/// Store number of coins in each part for an implied order of the parts

@@ -215,7 +215,7 @@ private:
 	
 	// Helper methods
 	void expand(const NodeIterator& node_it);
-	void write_node(Output& output, NodeIterator& node, int& node_counter);
+	void write_node(Output& output, NodeIterator& node, int& node_counter, int parent_id);
 };
 
 template <Problem P>
@@ -505,7 +505,7 @@ void Manager<P>::write(Output& output)
 		// Loop over the children - we know there is at least one
 		do
 		{
-			write_node(output, node, node_counter);
+			write_node(output, node, node_counter, 0);
 		} while (node.advance_sibling());
 
 		// Close the Children scope
@@ -519,7 +519,7 @@ void Manager<P>::write(Output& output)
 }
 
 template <Problem P>
-void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counter)
+void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counter, int parent_id)
 {
 	// Write out information for this node and its descendants
 	// On exit we expect both the indentation and node iterator to be at their entry value
@@ -527,7 +527,11 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 	assert(!node.is_root());
 
 	// Identify the node
-	output.println("Node: {:>5}     depth={:<2} {{", ++node_counter, node.depth());
+	int my_node_id = ++node_counter;
+	output.println("Node: {:>5}   depth={:<2}   parent={}   {{",
+				   my_node_id,
+				   node.depth(),
+				   parent_id == 0 ? "Root" : std::to_string(parent_id));
 	output.indent();
 
 	// Specify information that applies to node as a whole - its weighing, its induced partition, its resolved levels
@@ -536,7 +540,7 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 	auto& weighing_items = cache.get_weighings(&parent_partition);
 	auto& partition = node.partition();
 	weighing_items.weighings[node.index()]->write(output, parent_partition);
-	partition.write(output);
+	partition.write(output, weighing_items.provenances[node.index()]);
 	output.println("Outcomes:  Left: {};  Right: {};  Balances: {}",
 				   format_resolved_depth(node_ref.resolved_depth[Outcome::LeftHeavier]),
 				   format_resolved_depth(node_ref.resolved_depth[Outcome::RightHeavier]),
@@ -574,11 +578,12 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 			bool fresh_child = true;
 			while (fresh_child && node.outcome() == outcome)
 			{
-				write_node(output, node, node_counter);
+				write_node(output, node, node_counter, my_node_id);
 				fresh_child = node.advance_sibling();
 			}
 		}
 		output.outdent();
+		output.println("}}    // {}", outcome_names[outcome]);
 	}
 
 	// This node is over - reset our state
@@ -587,7 +592,7 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 		node.advance_parent();
 	}
 	output.outdent();
-	output << "}";
+	output.println("}}    // Node: {}", my_node_id);
 }
 
 #endif /* Manager_hpp */
