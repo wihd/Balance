@@ -15,6 +15,15 @@
 class Weighing;
 class Output;
 
+// TODO: Track "paired parts"
+// Sometimes two parts of a partition (always with the same size) are selected by identical paths except
+// with L and R exchanged.  When this happens a weighing that selects one of these parts to Left Pan
+// and corresponding selection for Right (or a more complex pattern) is solvable if and only if
+// the weighing that reverses the selection is solvable.  Our normal logic omits partitions that
+// select same coins to Left and RIght.  But it considers each part to be distinct.
+// I think we need some thought to work out how to identify when we can prune a weighing based on
+// pairs in parts.
+
 /**
  Immutable class that describes how we have split the coins into parts.
  This class only records the partition - we expect other classes around it to organize the partitions.

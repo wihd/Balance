@@ -329,14 +329,9 @@ OutcomeArray<ProblemFindMajority::StateType> ProblemFindMajority::apply_weighing
 
 bool ProblemFindMajority::is_resolved(const Partition&, const StateType& state)
 {
-	// If there are no valid distributions then this state represents an impossible sequence of weighings
-	// In that case it is resolved
-	if (state.empty())
-	{
-		return true;
-	}
-	
-	// Otherwise we count the number of H coins in each distribution
+	// Return true if we should not search any more from this state
+	// That is hopefully because the problem is solved, but it is also possible that the problem is impossible
+	// We count the number of H coins in each distribution
 	// The problem is resolved if H is in majority or in the minority for each case
 	bool seen_majority = false;
 	bool seen_minority = false;
@@ -363,6 +358,8 @@ bool ProblemFindMajority::is_resolved(const Partition&, const StateType& state)
 	
 	// All of the remaining distributions agreed on whether or not H was in the majority
 	// So the problem is solved after this sequence of weighings
+	// Alternatively there might not have been any distributions (in which case this is an impossible
+	// configuration, not a solved one).  But it still counts as resolved.
 	return true;
 }
 

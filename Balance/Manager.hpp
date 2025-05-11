@@ -393,9 +393,13 @@ void Manager<P>::expand(const NodeIterator& node_it)
 	auto& weighing_items = cache.get_weighings(&partition);
 	uint8_t original_resolved_depth = node.resolved_depth_all();
 
-	// Note that if all three of the outcomes at this node had resolved depth 0 then our immediate ancestor
-	// would already have resolved depth <= 1.  So we would already have exited in that case
-	assert(original_resolved_depth > 0);
+	// If the resolved depth of this node is already 0 it means that we decided to prune this node
+	// If this node was really resolved then its parent would have been set to resolved depth <= 1
+	// and we would have already exited
+	if (original_resolved_depth == 0)
+	{
+		return;
+	}
 
 	// Consider each possible outcome of this node
 	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
@@ -420,9 +424,11 @@ void Manager<P>::expand(const NodeIterator& node_it)
 													   *weighing_items.weighings[i],
 													   *weighing_items.partitions[i],
 													   *weighing_items.provenances[i]);
+			int impossible_count = 0;
 			int resolved_count = 0;
 			for (int o = Outcome::Begin; o != Outcome::End; ++o)
 			{
+				// Symmetric weighing optimisation:
 				// Since the balance is symmetric it means that we do not need to consider case
 				// where we select the same coins but reverse which of them are put in which pan.
 				// In most cases such paired selections are handled by omitting potential weighings
@@ -434,18 +440,44 @@ void Manager<P>::expand(const NodeIterator& node_it)
 				// Very few weighings are symmetric, but weighings applied to the root are always
 				// symmetric.  So this optimisation does cut out at least 1/3 of potential nodes
 				// and so is worth implementing.
-				// Alternatively the outcome might be resolved by the problem
-				if ((o == Outcome::RightHeavier && weighing_items.weighings[i]->is_symmetric())
-					|| problem.is_resolved(partition, children[i].state[o]))
+				if (o == Outcome::RightHeavier && weighing_items.weighings[i]->is_symmetric())
 				{
+					// We treat the child as resolved, so expanding the child will not create children
 					++resolved_count;
 					children[i].resolved_depth[o] = 0;
+					
+					// We count it as impossible iff Outcome::LeftHeavier was impossible
+					impossible_count *= 2;
+				}
+				else if (problem.is_resolved(partition, children[i].state[o]))
+				{
+					// The problem does not want us to track any further for this case
+					++resolved_count;
+					children[i].resolved_depth[o] = 0;
+
+					// We need to make a separate call to determine if its impossible
+					if (problem.is_impossible(partition, children[i].state[o]))
+					{
+						++impossible_count;
+					}
 				}
 			}
 			
-			// If all possible outcomes for this weighing are immediately resolved, then we are now
+			// No progress optimisation:
+			// If there are two impossible outcomes then this means that it was possible to deduce the
+			// outcome without performing the weighing.  In that case we want to prune this node since
+			// it cannot be on the shortest path to a solution.  But this does NOT count as resolved.
+			assert(impossible_count <= 2);
+			if (impossible_count == 2)
+			{
+				// If we solved it with two impossibles, we should have already solved our parent node!
+				assert(resolved_count == 2);
+				std::fill(children[i].resolved_depth.begin(), children[i].resolved_depth.end(), 0);
+			}
+			
+			// Otherwise if all possible outcomes for this weighing are immediately resolved, then we are now
 			// able to resolve our original node at depth 1
-			if (resolved_count == Outcome::Count)
+			else if (resolved_count == Outcome::Count)
 			{
 				node.resolved_depth[outcome] = 1;
 			}
@@ -561,6 +593,11 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 	
 	// Switch the iterator to look at the children of this node
 	bool has_children = node.advance_first_child();
+	
+	// First count the number of impossible outcomes to see if we applied no_progress optimisation
+	auto impossible_count = std::count_if(node_ref.state.begin(),
+										 node_ref.state.end(),
+										 [&](auto& s){ return problem.is_impossible(partition, s); });
 
 	// We generate information for each of the three outcomes
 	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
@@ -580,6 +617,13 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 			continue;
 		}
 		
+		// If we are in no-progress optimisation (i.e. impossible_count == 2) then this must be the pruned outcome
+		if (impossible_count == 2)
+		{
+			output.println("{} <Pruned - weighing outcome does not yield new information>", outcome_names[outcome]);
+			continue;
+		}
+
 		// If the node is resolved for this outcome, but not impossible then it must have been solved
 		// The problem has a method to display a solved node (which can decide how many lines to use)
 		if (node_ref.resolved_depth[outcome] == 0)
