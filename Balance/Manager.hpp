@@ -18,6 +18,10 @@
 /// Sentinel depth value to represent a node at which we have not yet determined the depth
 constexpr uint8_t NOT_RESOLVED = 255;
 
+/// Sentinel depth value meaning we pruned expanding node because even if node was solved entirely
+/// it could not yield a better solution than one already known
+constexpr uint8_t PRUNED_CANNOT_IMPROVE = 254;
+
 /// Format a resolved depth with special strings for most interesting values
 inline std::string format_resolved_depth(int depth)
 {
@@ -365,15 +369,16 @@ template <Problem P>
 void Manager<P>::expand(const NodeIterator& node_it)
 {
 	// Unless the computation is unhelpful, ensure that the children of this node are computed
-	
+	auto& node = node_it.node();
+
 	// It is possible that this node has an ancestor which is already resolved at such a depth that
 	// could not be improved even if this node has a weighing that resolves the problem immediately
 	// If that's the case we should not expand this node
 	size_t depth = node_it.depth();
 	for (size_t h = 0; h != depth; ++h)
 	{
-		auto [node, outcome] = node_it.ancestor(h);
-		if (node->resolved_depth[outcome] <= h + 2)
+		auto [n, o] = node_it.ancestor(h);
+		if (n->resolved_depth[o] <= h + 2)
 		{
 			// Let d = absolute depth of this node.  We are looking at an ancestor with absolute depth d - h - 1.
 			// If ancestor is resolved at r, then the deepest resolved node on best path from the ancestor
@@ -383,12 +388,19 @@ void Manager<P>::expand(const NodeIterator& node_it)
 			// So for descendents of this node to improve on the resolved depth of the ancestor we need
 			// d + 1 < d - h - 1 + r, i.e. we need h + 2 < r
 			// So if r <= h + 2 then expanding this node cannot lead to a shallower tree and we abort now
+			for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
+			{
+				if (node.resolved_depth[outcome] == NOT_RESOLVED)
+				{
+					// Change the resolved depth to mark why we did not expand this node
+					node.resolved_depth[outcome] = PRUNED_CANNOT_IMPROVE;
+				}
+			}
 			return;
 		}
 	}
 	
 	// Collect some values out of the outcome loop
-	auto& node = node_it.node();
 	auto& partition = node_it.partition();
 	auto& weighing_items = cache.get_weighings(&partition);
 	uint8_t original_resolved_depth = node.resolved_depth_all();
@@ -631,14 +643,22 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 			problem.write_solved_node(output, partition, node_ref.state[outcome], outcome_names[outcome]);
 			continue;
 		}
-		
+				
 		// Otherwise we will start a block for this outcome
 		output.println("{} {{", outcome_names[outcome]);
 		output.indent();
 		problem.write_ambiguous_state(output, partition, node_ref.state[outcome]);
 		
+		// We use a special depth to mark a node+outcome we did not expand because we already had a better solution
+		if (node_ref.resolved_depth[outcome] == PRUNED_CANNOT_IMPROVE)
+		{
+			// Lets record why we did not expand this node
+			assert(!has_children);
+			output << "Pruned:    Children of this node cannot improve on existing solution";
+		}
+
 		// Now we list the child nodes of this specific outcome by invoking this function recursively
-		if (has_children)
+		else if (has_children)
 		{
 			bool fresh_child = true;
 			while (fresh_child && node.outcome() == outcome)
