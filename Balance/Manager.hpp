@@ -188,8 +188,16 @@ class Manager
 			return index >= 0 ? *partitions[index] : *partitions[partitions.size() + index];
 		}
 		int index() const { return indexes.back(); }
+		int index(int index) const
+		{
+			return index >= 0 ? indexes[index] : indexes[indexes.size() + index];
+		}
 		Outcome outcome() const { return outcomes.back(); }
-		
+		Outcome outcome(int index) const
+		{
+			return index >= 0 ? outcomes[index] : outcomes[outcomes.size() + index];
+		}
+
 		// Modifiers
 		bool advance_first_child();
 		bool advance_parent();
@@ -676,6 +684,7 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 				   format_resolved_depth(node_ref.resolved_depth[Outcome::LeftHeavier]),
 				   format_resolved_depth(node_ref.resolved_depth[Outcome::RightHeavier]),
 				   format_resolved_depth(node_ref.resolved_depth[Outcome::Balances]));
+	bool is_symmetric = weighing_items.weighings[node.index()]->is_symmetric();
 	
 	// Switch the iterator to look at the children of this node
 	bool has_children = node.advance_first_child();
@@ -684,7 +693,7 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
 	{
 		// Report if we pruned the branch because of symmetric weighing
-		if (outcome == Outcome::RightHeavier && weighing_items.weighings[node.index()]->is_symmetric())
+		if (outcome == Outcome::RightHeavier && is_symmetric)
 		{
 			output.println("{} <Pruned - weighing is symmetric so covered by 'Left' case>",
 						   outcome_names[outcome]);
