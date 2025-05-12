@@ -11,6 +11,7 @@
 #include <memory>
 #include <algorithm>
 #include <cassert>
+#include <print>
 #include "Types.h"
 #include "PartitionCache.hpp"
 #include "Output.hpp"
@@ -373,6 +374,7 @@ void Manager<P>::solve_breadth(uint8_t stop_depth)
 	expand(NodeIterator(cache, coin_count, root));
 	
 	// Keep incrementing the depth searched, until the root node reports it is resolved
+	int expand_count = 0;
 	for (size_t depth = 1;
 		 root.resolved_depth[Outcome::Balances] == DEPTH_INFINITY && depth != stop_depth;
 		 ++depth)
@@ -388,6 +390,10 @@ void Manager<P>::solve_breadth(uint8_t stop_depth)
 			if (iterator.depth() == depth)
 			{
 				expand(iterator);
+				if (++expand_count % 100 == 0)
+				{
+					std::println("Expand Count: {}", expand_count);
+				}
 				
 				// Change the iterator, but do not visit any nodes added by this expansion
 				iterator.advance_prune();
