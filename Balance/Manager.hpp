@@ -15,12 +15,25 @@
 #include "PartitionCache.hpp"
 #include "Output.hpp"
 
-/// Sentinel depth value to represent a node at which we have not yet determined the depth
-constexpr uint8_t NOT_RESOLVED = 255;
+// Each node will have a resolved depth which means the length of the longest path from the node
+// to a node that is completely resolved.  We also use a number of sentinel values to record special
+// properties of a node.
+
+/// Sometimes we create a node structure, but do not populate it.
+/// This happens because when we expand a node we create a C-style array for all of its children.
+/// But if we find that one of the child nodes is completely solved there is no point in expanding
+/// any more children.  We mark the Left outcome as DEPTH_NOT_CONSTRUCTED to indicate this state.
+constexpr uint8_t DEPTH_NOT_CONSTRUCTED = 255;
+
+/// Most nodes are not fully resolved.  This special value is used to indicate a node whose true resolved
+/// depth is not known (so could be arbitary large).  We expect to replace it with actual value later.
+constexpr uint8_t DEPTH_INFINITY = 254;
 
 /// Sentinel depth value meaning we pruned expanding node because even if node was solved entirely
-/// it could not yield a better solution than one already known
-constexpr uint8_t PRUNED_CANNOT_IMPROVE = 254;
+/// it could not yield a better solution than one already known.  The difference between this sentinel
+/// and DEPTH_NOT_CONSTRUCTED, is that this sentinel is used to explain why we decided not to create
+/// a child of this node but this was created.  The other setting indicates we did not create node at all.
+constexpr uint8_t DEPTH_PRUNED_CANNOT_IMPROVE = 253;
 
 /// Format a resolved depth with special strings for most interesting values
 inline std::string format_resolved_depth(int depth)
@@ -29,8 +42,12 @@ inline std::string format_resolved_depth(int depth)
 	{
 		case 0:
 			return "<Resolved Here>";
-		case NOT_RESOLVED:
+		case DEPTH_PRUNED_CANNOT_IMPROVE:
+			return "<Pruned Children>";
+		case DEPTH_INFINITY:
 			return "<Not Resolved>";
+		case DEPTH_NOT_CONSTRUCTED:
+			return "<Never Constructed>";
 		default:
 			return std::format("<Longest path: {}>", depth);
 	}
@@ -113,7 +130,7 @@ struct Node
 	// 1. The Problem object reports that the state is resolved (we store 0), or
 	// 2. There is a child weighing for which the problem is resolved (we store child+1)
 	// We store a sentinel value if the problem is not resolved
-	OutcomeArray<uint8_t> resolved_depth = { NOT_RESOLVED, NOT_RESOLVED, NOT_RESOLVED };
+	OutcomeArray<uint8_t> resolved_depth = { DEPTH_INFINITY, DEPTH_INFINITY, DEPTH_INFINITY };
 	
 	// The node as a whole is resolved at the depth of its deepest outcome
 	uint8_t resolved_depth_all() const
@@ -228,7 +245,7 @@ bool Manager<P>::NodeIterator::advance_first_child()
 	// Attempt to modify iterator by moving to its first expanded child
 	// Return true if made change
 	// return false if no children (and guarantee that iterator is not changed)
-	auto& node = nodes.back();
+	auto node = nodes.back();
 
 	// We consider the nodes children to consist of all of its outcomes, taken together
 	// It is possible that first outcome was not expanded but second was expanded (because we do not expand
@@ -242,6 +259,9 @@ bool Manager<P>::NodeIterator::advance_first_child()
 			partitions.push_back(cache.get_weighings(partitions.back()).partitions[0]);
 			indexes.push_back(0);
 			outcomes.push_back(static_cast<Outcome>(outcome));
+
+			// The not-constructed flag is never applied to the first member of a children array
+			assert(nodes.back()->resolved_depth[Outcome::LeftHeavier] != DEPTH_NOT_CONSTRUCTED);
 			return true;
 		}
 	}
@@ -273,6 +293,7 @@ bool Manager<P>::NodeIterator::advance_sibling()
 {
 	// Attempt to modify iterator by moving to a sibling node - that is the next existing node after the current
 	// node within its parent.  This method does NOT attempt to move to a cousin node
+	// Nodes that were never constructed are presumed to not exist - the advance methods will not move to them.
 	// Return true if made change
 	// return false if the node has no further sibling (iterator is not changed)
 	
@@ -284,7 +305,7 @@ bool Manager<P>::NodeIterator::advance_sibling()
 	
 	// If we are not the root we must have a parent node to examine
 	auto parent_depth = nodes.size() - 2;
-	auto& node = nodes[parent_depth];
+	auto node = nodes[parent_depth];
 	int outcome = outcomes.back();
 
 	// Does the current outcome have another child we have not visited yet?
@@ -292,11 +313,18 @@ bool Manager<P>::NodeIterator::advance_sibling()
 	int next_index = indexes.back() + 1;
 	if (weighing_items.weighings.size() > next_index)
 	{
-		nodes.back() = &node->children[outcome][next_index];
-		partitions.back() = weighing_items.partitions[next_index];
-		indexes.back() = next_index;
-		// outcomes.back() is unchanged
-		return true;
+		// Just because there is another potential weighing does not mean we constructed the node
+		// Note that once we stop constructing children we don't construct any more so we do not
+		// need to examine any child efter the next one
+		auto next_node = &node->children[outcome][next_index];
+		if (next_node->resolved_depth[Outcome::LeftHeavier] != DEPTH_NOT_CONSTRUCTED)
+		{
+			nodes.back() = next_node;
+			partitions.back() = weighing_items.partitions[next_index];
+			indexes.back() = next_index;
+			// outcomes.back() is unchanged
+			return true;
+		}
 	}
 
 	// There might be another outcome, in which case we take its first child
@@ -309,6 +337,9 @@ bool Manager<P>::NodeIterator::advance_sibling()
 			partitions.back() = weighing_items.partitions[0];
 			indexes.back() = 0;
 			outcomes.back() = static_cast<Outcome>(outcome);
+
+			// // The not-constructed flag is never applied to the first member of a children array
+			assert(nodes.back()->resolved_depth[Outcome::LeftHeavier] != DEPTH_NOT_CONSTRUCTED);
 			return true;
 		}
 	}
@@ -335,7 +366,7 @@ void Manager<P>::solve_breadth(uint8_t stop_depth)
 	
 	// Keep incrementing the depth searched, until the root node reports it is resolved
 	for (size_t depth = 1;
-		 root.resolved_depth[Outcome::Balances] == NOT_RESOLVED && depth != stop_depth;
+		 root.resolved_depth[Outcome::Balances] == DEPTH_INFINITY && depth != stop_depth;
 		 ++depth)
 	{
 		// We will walk through all of our nodes using an iterator
@@ -390,10 +421,10 @@ void Manager<P>::expand(const NodeIterator& node_it)
 			// So if r <= h + 2 then expanding this node cannot lead to a shallower tree and we abort now
 			for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
 			{
-				if (node.resolved_depth[outcome] == NOT_RESOLVED)
+				if (node.resolved_depth[outcome] == DEPTH_INFINITY)
 				{
 					// Change the resolved depth to mark why we did not expand this node
-					node.resolved_depth[outcome] = PRUNED_CANNOT_IMPROVE;
+					node.resolved_depth[outcome] = DEPTH_PRUNED_CANNOT_IMPROVE;
 				}
 			}
 			return;
@@ -418,7 +449,7 @@ void Manager<P>::expand(const NodeIterator& node_it)
 	{
 		// If the problem is already resolved for this outcome of the node do not expand it
 		// Just in case do not expand again if it is already expanded here
-		if (node.resolved_depth[outcome] != NOT_RESOLVED || node.children[outcome])
+		if (node.resolved_depth[outcome] != DEPTH_INFINITY || node.children[outcome])
 		{
 			continue;
 		}
@@ -467,7 +498,7 @@ void Manager<P>::expand(const NodeIterator& node_it)
 					++resolved_count;
 					children[i].resolved_depth[o] = 0;
 
-					// We need to make a separate call to determine if its impossible
+					// We need to make a separate call to determine if its resolved because its impossible
 					if (problem.is_impossible(partition, children[i].state[o]))
 					{
 						++impossible_count;
@@ -484,6 +515,10 @@ void Manager<P>::expand(const NodeIterator& node_it)
 			{
 				// If we solved it with two impossibles, we should have already solved our parent node!
 				assert(resolved_count == 2);
+				
+				// We mark all of the outcomes at this depth as resolved, which will prevent further expansion
+				// But we have not changed resolved_count, so we will not be marking parent as resolved
+				// at depth 1 because of this node
 				std::fill(children[i].resolved_depth.begin(), children[i].resolved_depth.end(), 0);
 			}
 			
@@ -492,10 +527,22 @@ void Manager<P>::expand(const NodeIterator& node_it)
 			else if (resolved_count == Outcome::Count)
 			{
 				node.resolved_depth[outcome] = 1;
+				
+				// We have found a child that is immediately resolved
+				// It is impossible that remaining weighings for current outcome can do better so we will not
+				// continue with the `i` loop.  Since the children are stored in a C-style array
+				// we mark each one of them to indicate that the node was never constructed.
+				// (If we had a vector we would stop extending it - I'm not sure which is optimal)
+				// The node iterator will not advance to such nodes so rest of code can ignore them.
+				for (; i != weighing_items.weighings.size(); ++i)
+				{
+					children[i].resolved_depth[Outcome::LeftHeavier] = DEPTH_NOT_CONSTRUCTED;
+				}
+				break;
 			}
-		}
+		} // next `i`: Switch to another weighing for current outcome
 		node.children[outcome] = std::move(children);
-	}
+	} // next `outcome`: Consider expansion after another outcome within this node
 	
 	// As a result of the expansion it is possible that we might be able to reduce the resolved depth
 	// of ancestors of this node.  We will walk up the ancestor tree until we find a node that does not improve
@@ -582,6 +629,35 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 	// On exit we expect both the indentation and node iterator to be at their entry value
 	// although both of them may have changed during the function
 	assert(!node.is_root());
+	auto& node_ref = node.node();
+	auto& partition = node.partition();
+
+	// First count the number of impossible outcomes to see if we applied no_progress optimisation
+	auto impossible_count = std::count_if(node_ref.state.begin(),
+										  node_ref.state.end(),
+										  [&](auto& s){ return problem.is_impossible(partition, s); });
+
+	// Did caller ask to omit nodes that are not part of a solution?
+	if (output.only_happy_path())
+	{
+		// Check that the parent node has an interesting resolved depth
+		// This means that if we did not solve the parent then we do not filter here
+		auto [n, o] = node.ancestor(0);
+		auto parent_depth = n->resolved_depth[o];
+		assert(parent_depth != DEPTH_PRUNED_CANNOT_IMPROVE);
+		if (parent_depth != DEPTH_INFINITY)
+		{
+			// Nodes that were pruned because of lack of progress will have resolved depth 0
+			// If a node has two impossible outcomes we will skip it even though first condition is false
+			if (node_ref.resolved_depth_all() >= parent_depth || impossible_count == 2)
+			{
+				// This node cannot be on the path that set the parent's resolved depth
+				// So we will not show it at all
+				// We shouldn't find two nodes for same parent because of DEPTH_PRUNED_CANNOT_IMPROVE
+				return;
+			}
+		}
+	}
 
 	// Identify the node
 	int my_node_id = ++node_counter;
@@ -592,10 +668,8 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 	output.indent();
 
 	// Specify information that applies to node as a whole - its weighing, its induced partition, its resolved levels
-	auto& node_ref = node.node();
 	auto& parent_partition = node.partition(-2);
 	auto& weighing_items = cache.get_weighings(&parent_partition);
-	auto& partition = node.partition();
 	weighing_items.weighings[node.index()]->write(output, parent_partition);
 	partition.write(output, weighing_items.provenances[node.index()]);
 	output.println("Outcomes:  Left: {};  Right: {};  Balances: {}",
@@ -606,11 +680,6 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 	// Switch the iterator to look at the children of this node
 	bool has_children = node.advance_first_child();
 	
-	// First count the number of impossible outcomes to see if we applied no_progress optimisation
-	auto impossible_count = std::count_if(node_ref.state.begin(),
-										 node_ref.state.end(),
-										 [&](auto& s){ return problem.is_impossible(partition, s); });
-
 	// We generate information for each of the three outcomes
 	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
 	{
@@ -650,7 +719,7 @@ void Manager<P>::write_node(Output& output, NodeIterator& node, int& node_counte
 		problem.write_ambiguous_state(output, partition, node_ref.state[outcome]);
 		
 		// We use a special depth to mark a node+outcome we did not expand because we already had a better solution
-		if (node_ref.resolved_depth[outcome] == PRUNED_CANNOT_IMPROVE)
+		if (node_ref.resolved_depth[outcome] == DEPTH_PRUNED_CANNOT_IMPROVE)
 		{
 			// Lets record why we did not expand this node
 			assert(!has_children);
