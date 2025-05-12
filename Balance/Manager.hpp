@@ -534,7 +534,7 @@ void Manager<P>::expand(const NodeIterator& node_it)
 				// we mark each one of them to indicate that the node was never constructed.
 				// (If we had a vector we would stop extending it - I'm not sure which is optimal)
 				// The node iterator will not advance to such nodes so rest of code can ignore them.
-				for (; i != weighing_items.weighings.size(); ++i)
+				for (++i; i != weighing_items.weighings.size(); ++i)
 				{
 					children[i].resolved_depth[Outcome::LeftHeavier] = DEPTH_NOT_CONSTRUCTED;
 				}
