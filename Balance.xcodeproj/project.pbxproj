@@ -7,6 +7,15 @@
 	objects = {
 
 /* Begin PBXCopyFilesBuildPhase section */
+		BE3379AC2DD4AFC70089E514 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
 		BEB1EE492DBBCF0500853100 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -19,10 +28,16 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		BE3379AE2DD4AFC70089E514 /* Balance2 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Balance2; sourceTree = BUILT_PRODUCTS_DIR; };
 		BEB1EE4B2DBBCF0500853100 /* Balance */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Balance; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		BE3379AF2DD4AFC70089E514 /* Balance2 */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Balance2;
+			sourceTree = "<group>";
+		};
 		BEB1EE4D2DBBCF0500853100 /* Balance */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Balance;
@@ -31,6 +46,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		BE3379AB2DD4AFC70089E514 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BEB1EE482DBBCF0500853100 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -45,6 +67,7 @@
 			isa = PBXGroup;
 			children = (
 				BEB1EE4D2DBBCF0500853100 /* Balance */,
+				BE3379AF2DD4AFC70089E514 /* Balance2 */,
 				BEB1EE4C2DBBCF0500853100 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -53,6 +76,7 @@
 			isa = PBXGroup;
 			children = (
 				BEB1EE4B2DBBCF0500853100 /* Balance */,
+				BE3379AE2DD4AFC70089E514 /* Balance2 */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -60,6 +84,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		BE3379AD2DD4AFC70089E514 /* Balance2 */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BE3379B22DD4AFC70089E514 /* Build configuration list for PBXNativeTarget "Balance2" */;
+			buildPhases = (
+				BE3379AA2DD4AFC70089E514 /* Sources */,
+				BE3379AB2DD4AFC70089E514 /* Frameworks */,
+				BE3379AC2DD4AFC70089E514 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				BE3379AF2DD4AFC70089E514 /* Balance2 */,
+			);
+			name = Balance2;
+			packageProductDependencies = (
+			);
+			productName = Balance2;
+			productReference = BE3379AE2DD4AFC70089E514 /* Balance2 */;
+			productType = "com.apple.product-type.tool";
+		};
 		BEB1EE4A2DBBCF0500853100 /* Balance */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = BEB1EE522DBBCF0500853100 /* Build configuration list for PBXNativeTarget "Balance" */;
@@ -91,6 +137,9 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 1630;
 				TargetAttributes = {
+					BE3379AD2DD4AFC70089E514 = {
+						CreatedOnToolsVersion = 16.3;
+					};
 					BEB1EE4A2DBBCF0500853100 = {
 						CreatedOnToolsVersion = 16.3;
 					};
@@ -111,11 +160,19 @@
 			projectRoot = "";
 			targets = (
 				BEB1EE4A2DBBCF0500853100 /* Balance */,
+				BE3379AD2DD4AFC70089E514 /* Balance2 */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		BE3379AA2DD4AFC70089E514 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BEB1EE472DBBCF0500853100 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -126,6 +183,24 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		BE3379B32DD4AFC70089E514 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		BE3379B42DD4AFC70089E514 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 		BEB1EE502DBBCF0500853100 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -265,6 +340,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		BE3379B22DD4AFC70089E514 /* Build configuration list for PBXNativeTarget "Balance2" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BE3379B32DD4AFC70089E514 /* Debug */,
+				BE3379B42DD4AFC70089E514 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		BEB1EE462DBBCF0500853100 /* Build configuration list for PBXProject "Balance" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

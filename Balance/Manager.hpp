@@ -234,7 +234,7 @@ public:
 		// We may assume that the problem is not resolved - a problem resolved at the root is not interesting!
 		root.state[Outcome::Balances] = problem.make_root_data();
 	}
-	void solve_breadth(uint8_t stop_depth);
+	int solve_breadth(uint8_t stop_depth);
 	void write(Output& output);
 	
 private:
@@ -244,7 +244,7 @@ private:
 	uint8_t coin_count;
 	
 	// Helper methods
-	void expand(const NodeIterator& node_it);
+	int expand(const NodeIterator& node_it);
 	void write_node(Output& output, NodeIterator& node, int& node_counter, int parent_id);
 };
 
@@ -367,14 +367,14 @@ inline void Manager<P>::NodeIterator::advance_prune()
 }
 
 template<Problem P>
-void Manager<P>::solve_breadth(uint8_t stop_depth)
+int Manager<P>::solve_breadth(uint8_t stop_depth)
 {
 	// Solve the problem using a depth first search
 	// Expand the root node immediately - so we can use the root as a sentinel value
 	expand(NodeIterator(cache, coin_count, root));
 	
 	// Keep incrementing the depth searched, until the root node reports it is resolved
-	int expand_count = 0;
+	int node_count = 1;
 	for (size_t depth = 1;
 		 root.resolved_depth[Outcome::Balances] == DEPTH_INFINITY && depth != stop_depth;
 		 ++depth)
@@ -389,11 +389,7 @@ void Manager<P>::solve_breadth(uint8_t stop_depth)
 			// Is the iterator at the correct depth?
 			if (iterator.depth() == depth)
 			{
-				expand(iterator);
-				if (++expand_count % 100 == 0)
-				{
-					std::println("Expand Count: {}", expand_count);
-				}
+				node_count += expand(iterator);
 				
 				// Change the iterator, but do not visit any nodes added by this expansion
 				iterator.advance_prune();
@@ -408,10 +404,11 @@ void Manager<P>::solve_breadth(uint8_t stop_depth)
 			}
 		}
 	}
+	return node_count;
 }
 
 template <Problem P>
-void Manager<P>::expand(const NodeIterator& node_it)
+int Manager<P>::expand(const NodeIterator& node_it)
 {
 	// Unless the computation is unhelpful, ensure that the children of this node are computed
 	auto& node = node_it.node();
@@ -441,7 +438,7 @@ void Manager<P>::expand(const NodeIterator& node_it)
 					node.resolved_depth[outcome] = DEPTH_PRUNED_CANNOT_IMPROVE;
 				}
 			}
-			return;
+			return 0;
 		}
 	}
 	
@@ -455,10 +452,11 @@ void Manager<P>::expand(const NodeIterator& node_it)
 	// and we would have already exited
 	if (original_resolved_depth == 0)
 	{
-		return;
+		return 0;
 	}
 
 	// Consider each possible outcome of this node
+	int node_count = 0;
 	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
 	{
 		// If the problem is already resolved for this outcome of the node do not expand it
@@ -471,6 +469,7 @@ void Manager<P>::expand(const NodeIterator& node_it)
 		// Allocate an array of nodes into which we will store the result
 		// C++14 Note: There is a specialization to allocate an array of node values
 		auto children = std::make_unique<NodeType[]>(weighing_items.weighings.size());
+		node_count += static_cast<int>(weighing_items.weighings.size());
 		
 		// Loop over all of the weighings permitted from this partition
 		for (size_t i = 0; i != weighing_items.weighings.size(); ++i)
@@ -597,6 +596,7 @@ void Manager<P>::expand(const NodeIterator& node_it)
 			new_resolved_depth = end_resolved_all + 1;
 		}
 	}
+	return node_count;
 }
 
 template <Problem P>
