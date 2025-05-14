@@ -9,6 +9,7 @@
 #define Weighing2_hpp
 
 #include <vector>
+#include <set>
 #include "Types2.h"
 
 /**
@@ -24,7 +25,8 @@
  In first version the output parts were listed in same order as input partition (possible split if the
  part was refined).  In the second version we require the parts of a partition to be in ascending order.
  This means that it is no longer true that output parts split from the same input part are necessarily
- placed together.
+ placed together.  However we retain the requirement that if two output parts have the same size then
+ we will list them in ascending order by input part number and then ascending placement.
  */
 class Weighing2
 {
@@ -37,13 +39,19 @@ public:
 		Placement placement;		// The pan into which these coins were placed during the weighing
 	};
 	
+	Weighing2(std::vector<Part>&& provenances) : provenances(std::move(provenances)) {}
 	auto operator<=>(const Weighing2&) const = default;
-
+	
 	// Accessors
 	const Part& provenance(size_t index) const { return provenances[index]; }
+
+	static Weighing2* get_instance(std::vector<Part>&& provenances);
 	
 private:
 	std::vector<Part> provenances;	// Array contains an entry for each part in output partition
+		
+	/// Static store that owns all weighing objects we have created
+	static std::set<std::unique_ptr<Weighing2>, PointerComparator<Weighing2>> cache;
 };
 
 #endif /* Weighing2_hpp */

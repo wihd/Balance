@@ -17,5 +17,19 @@ typedef enum : int {
 	SetAside,
 } Placement;
 
+/** Transparaent comparator class that allows mixing unique and raw pointers */
+template <class T>
+struct PointerComparator
+{
+	// Comparator supports comparing types other than the main type
+	using is_transparent = std::true_type;
+
+	// Provide comparators for the three cases we expect to occur
+	// Since the container should be using unique pointers we do not need to compare raw pointers
+	bool operator()(const std::unique_ptr<T>& a, const std::unique_ptr<T>& b) const { return *a < *b; }
+	bool operator()(const std::unique_ptr<T>& a, const T* b) const { return *a < *b; }
+	bool operator()(const T* a, const std::unique_ptr<T>& b) const { return *a < *b; }
+};
+
 
 #endif /* Types2_h */
