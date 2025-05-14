@@ -395,7 +395,7 @@ void Weighing::fill_left(const Partition& partition, uint8_t count, size_t index
 
 void Weighing::fill_right(const Partition& partition, uint8_t count, size_t index)
 {
-	// Place count coins in right pan, starting from index+1 part
+	// Place count coins in right pan, starting from index part
 	// Caller already knows that there is room to place the coins
 	for (; index != right.size(); ++index)
 	{
