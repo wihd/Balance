@@ -13,6 +13,51 @@
 // Initialise static values
 decltype(Weighing2::cache) Weighing2::cache{};
 
+bool Weighing2::is_symmetric(const Partition2& output) const
+{
+	// Return true if pan_contents(..., Left) == pan_contents(..., Right)
+	// This means that swapping left and right pan would not change the selection
+	// For now we will compute this on request
+	// Note that we do not actually need to compute the contents to see if there is a problem
+	
+	// Although the provanence does not list parts in input part order (any more)
+	// it does promise that all placements for the same part are adjacent and in placement order
+	// So we can make a single pass through to look for summetry violation
+	uint8_t left_pan = 0;
+	int part = -1;
+	for (size_t i = 0; i != provenances.size(); ++i)
+	{
+		auto& p = provenances[i];
+		if (part != p.part)
+		{
+			if (left_pan != 0)
+			{
+				// We switched part without matching left_pan, so not summetric
+				return false;
+			}
+			part = p.part;
+		}
+		
+		if (p.placement == Placement::LeftPan)
+		{
+			// Record left pan size, to match later
+			left_pan = output[i];
+		}
+		else if (p.placement == Placement::RightPan)
+		{
+			if (left_pan != output[i])
+			{
+				// The right pan was non-empty, but didn't match the left pan in size
+				return false;
+			}
+			left_pan = 0;
+		}
+	}
+	
+	// We switched input part at end of loop, so there should not be any unmatched left_pan coins
+	return left_pan == 0;
+}
+
 size_t Weighing2::input_size() const
 {
 	// Compute the part sizes of the input partition of this weighing

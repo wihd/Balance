@@ -45,6 +45,7 @@ public:
 	auto operator<=>(const Weighing2&) const = default;
 	
 	// Accessors
+	bool is_symmetric(const Partition2& output) const;
 	size_t input_size() const;
 	std::vector<uint8_t> input_parts(const Partition2& output_partition) const;
 	const Part& provenance(size_t index) const { return provenances[index]; }
