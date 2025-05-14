@@ -54,7 +54,7 @@ typedef enum : int {
 	Count = 3,
 } Outcome;
 
-/// Fixed length array to store the three possible outcomes of a sorting
+/// Fixed length array to store the three possible outcomes of a weighing
 template <class D>
 using OutcomeArray = std::array<D, Outcome::Count>;
 

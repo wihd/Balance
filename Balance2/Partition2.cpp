@@ -9,6 +9,7 @@
 #include <algorithm>
 #include "Partition2.hpp"
 #include "Weighing2.hpp"
+#include "Output2.hpp"
 
 // Initialise static values
 decltype(Partition2::cache) Partition2::cache{};
@@ -423,5 +424,44 @@ Partition2* Partition2::get_instance(std::vector<uint8_t>&& parts)
 		auto result = instance.get();
 		cache.insert(std::move(instance));
 		return result;
+	}
+}
+
+void Partition2::write(Output2& output, const Weighing2* weighing) const
+{
+	// Optionally caller may provide a weighing vector to explain how partition was computed
+	if (weighing)
+	{
+		// Each part consists of the members of some input part that were sent to some bucket
+		// Count for each input part how many ways it is divided
+		// We know there cannot be more input parts than output parts
+		std::vector<int> counters(parts.size());
+		for (auto& p : *weighing)
+		{
+			counters[p.part] += 1;
+		}
+		
+		std::vector<std::string> part_provenances;
+		for (auto& p : *weighing)
+		{
+			if (counters[p.part] == 1)
+			{
+				part_provenances.push_back(std::format("p[{}]", p.part));
+			}
+			else
+			{
+				part_provenances.push_back(std::format("p[{}]@{}", p.part, placement_names[p.placement]));
+			}
+		}
+
+		// C++ 20 Note: The {::s} format makes it omit string delimiters around the parts
+		output.println("Partition: {{ {} part{};  Sizes: {};  Provenances: {::s} }}",
+					   parts.size(), parts.size() == 1 ? "" : "s", parts, part_provenances);
+	}
+	else
+	{
+		// C++20 Note: Built in support for formatting vectors (and other ranges)
+		output.println("Partition: {{ {} part{};  Sizes: {} }}",
+					   parts.size(), parts.size() == 1 ? "" : "s", parts);
 	}
 }

@@ -15,6 +15,7 @@
 #include "Types2.h"
 
 class Weighing2;
+class Output2;
 
 /**
  Class that records a way of partitioning the coins into distinguishable parts.
@@ -53,6 +54,9 @@ public:
 	uint8_t coin_count() const { return std::reduce(parts.begin(), parts.end()); }
 	const std::vector<Child>& get_children();
 	static Partition2* get_instance(std::vector<uint8_t>&& parts);
+
+	/// Display a summary of this partition
+	void write(Output2& output, const Weighing2* weighing = nullptr) const;
 
 private:
 	/// Store number of coins in each part for an implied order of the parts

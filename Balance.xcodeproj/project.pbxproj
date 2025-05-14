@@ -186,6 +186,7 @@
 		BE3379B32DD4AFC70089E514 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++23";
 				CODE_SIGN_STYLE = Automatic;
 				MACOSX_DEPLOYMENT_TARGET = 15.4;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -195,6 +196,7 @@
 		BE3379B42DD4AFC70089E514 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++23";
 				CODE_SIGN_STYLE = Automatic;
 				MACOSX_DEPLOYMENT_TARGET = 15.4;
 				PRODUCT_NAME = "$(TARGET_NAME)";

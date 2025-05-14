@@ -11,6 +11,8 @@
 #include <vector>
 #include <set>
 #include "Types2.h"
+class Partition2;
+class Output2;
 
 /**
  Class represents a way of weighing a partition by selecting coins for the left and right pans.
@@ -43,10 +45,16 @@ public:
 	auto operator<=>(const Weighing2&) const = default;
 	
 	// Accessors
+	size_t input_size() const;
+	std::vector<uint8_t> input_parts(const Partition2& output_partition) const;
 	const Part& provenance(size_t index) const { return provenances[index]; }
+	auto begin() const { return provenances.begin(); }
+	auto end() const { return provenances.end(); }
+	std::vector<uint8_t> pan_contents(const Partition2& output, Placement placement) const;
 
+	void write(Output2& output, const Partition2& output_partition) const;
 	static Weighing2* get_instance(std::vector<Part>&& provenances);
-	
+
 private:
 	std::vector<Part> provenances;	// Array contains an entry for each part in output partition
 		

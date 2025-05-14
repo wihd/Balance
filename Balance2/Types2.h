@@ -10,12 +10,32 @@
 #ifndef Types2_h
 #define Types2_h
 
+#include <array>
+
 /** Enumerate the options for handling a coin in a weighing */
 typedef enum : int {
 	LeftPan,
 	RightPan,
 	SetAside,
 } Placement;
+
+/// Array listing the three possible outcomes of a weighing operation
+typedef enum : int {
+	LeftHeavier,
+	RightHeavier,
+	Balances,
+	
+	// Constants that make code more readable
+	Begin = 0,
+	End = 3,
+	Count = 3,
+} Outcome;
+
+/// Fixed length array to store the three possible outcomes of a weighing
+template <class D>
+using OutcomeArray = std::array<D, Outcome::Count>;
+
+constexpr OutcomeArray<const char*> placement_names { "Left", "Right", "Aside" };
 
 /** Transparaent comparator class that allows mixing unique and raw pointers */
 template <class T>
@@ -30,6 +50,5 @@ struct PointerComparator
 	bool operator()(const std::unique_ptr<T>& a, const T* b) const { return *a < *b; }
 	bool operator()(const T* a, const std::unique_ptr<T>& b) const { return *a < *b; }
 };
-
 
 #endif /* Types2_h */
