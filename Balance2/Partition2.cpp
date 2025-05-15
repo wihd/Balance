@@ -63,7 +63,7 @@ Partition2::Child Generator::get() const
 	// We will accumulate the data in a local structure so its easier to sort
 	struct Item
 	{
-		int input_part;				// Input partition part from which this output part is refined
+		uint8_t input_part;			// Input partition part from which this output part is refined
 		Placement placement;		// Pan into which this set of coins is placed
 		uint8_t part_size;			// Number of coins in this output part
 		
@@ -85,7 +85,7 @@ Partition2::Child Generator::get() const
 	// Each input part will yield between one and three output parts
 	// Compute the provanences and input part sizes in order of output
 	std::vector<Item> items;
-	for (size_t i = 0; i != input.size(); ++i)
+	for (uint8_t i = 0; i != input.size(); ++i)
 	{
 		auto count = input[i];
 		if (left[i] > 0)
@@ -119,11 +119,9 @@ Partition2::Child Generator::get() const
 	}
 	
 	// Switch to a cached instance of each object so we only have one of each
-	return
-	{
-		Weighing2::get_instance(std::move(provenances)),
-		Partition2::get_instance(std::move(output_parts))
-	};
+	auto output_partition = Partition2::get_instance(std::move(output_parts));
+	auto weighing = Weighing2::get_instance(std::move(provenances), *output_partition);
+	return { weighing, output_partition };
 }
 
 bool Generator::advance()

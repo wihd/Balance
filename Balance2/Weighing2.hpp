@@ -41,11 +41,10 @@ public:
 		Placement placement;		// The pan into which these coins were placed during the weighing
 	};
 	
-	Weighing2(std::vector<Part>&& provenances) : provenances(std::move(provenances)) {}
 	auto operator<=>(const Weighing2&) const = default;
 	
 	// Accessors
-	bool is_symmetric(const Partition2& output) const;
+	bool is_symmetric(const Partition2& output) const { return _is_symmetric; }
 	size_t input_size() const;
 	std::vector<uint8_t> input_parts(const Partition2& output_partition) const;
 	const Part& provenance(size_t index) const { return provenances[index]; }
@@ -54,11 +53,17 @@ public:
 	std::vector<uint8_t> pan_contents(const Partition2& output, Placement placement) const;
 
 	void write(Output2& output, const Partition2& output_partition) const;
-	static Weighing2* get_instance(std::vector<Part>&& provenances);
+	static Weighing2* get_instance(std::vector<Part>&& provenances, const Partition2& output);
 
 private:
 	std::vector<Part> provenances;	// Array contains an entry for each part in output partition
-		
+	bool _is_symmetric;
+
+	// We expect to make weighings though the get_instance() function
+	Weighing2(std::vector<Part>&& provenances, bool is_symmetric) :
+		provenances(std::move(provenances)), _is_symmetric(is_symmetric) {}
+	void set_symmetric(bool is_symmetric) { _is_symmetric = is_symmetric; }
+
 	/// Static store that owns all weighing objects we have created
 	static std::set<std::unique_ptr<Weighing2>, PointerComparator<Weighing2>> cache;
 };

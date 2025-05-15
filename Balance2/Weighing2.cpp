@@ -13,51 +13,6 @@
 // Initialise static values
 decltype(Weighing2::cache) Weighing2::cache{};
 
-bool Weighing2::is_symmetric(const Partition2& output) const
-{
-	// Return true if pan_contents(..., Left) == pan_contents(..., Right)
-	// This means that swapping left and right pan would not change the selection
-	// For now we will compute this on request
-	// Note that we do not actually need to compute the contents to see if there is a problem
-	
-	// Although the provanence does not list parts in input part order (any more)
-	// it does promise that all placements for the same part are adjacent and in placement order
-	// So we can make a single pass through to look for summetry violation
-	uint8_t left_pan = 0;
-	uint8_t part = 255;
-	for (size_t i = 0; i != provenances.size(); ++i)
-	{
-		auto& p = provenances[i];
-		if (part != p.part)
-		{
-			if (left_pan != 0)
-			{
-				// We switched part without matching left_pan, so not summetric
-				return false;
-			}
-			part = p.part;
-		}
-		
-		if (p.placement == Placement::LeftPan)
-		{
-			// Record left pan size, to match later
-			left_pan = output[i];
-		}
-		else if (p.placement == Placement::RightPan)
-		{
-			if (left_pan != output[i])
-			{
-				// The right pan was non-empty, but didn't match the left pan in size
-				return false;
-			}
-			left_pan = 0;
-		}
-	}
-	
-	// We switched input part at end of loop, so there should not be any unmatched left_pan coins
-	return left_pan == 0;
-}
-
 size_t Weighing2::input_size() const
 {
 	// Compute the part sizes of the input partition of this weighing
@@ -154,10 +109,10 @@ void Weighing2::write(Output2& output, const Partition2& output_partition) const
 				   write_pan_description(pan_contents(output_partition, Placement::SetAside), input));
 }
 
-Weighing2* Weighing2::get_instance(std::vector<Part>&& provenances)
+Weighing2* Weighing2::get_instance(std::vector<Part>&& provenances, const Partition2& output)
 {
 	// Get the cached instance of a weighing with the given provenances, creating it if necessary
-	Weighing2 probe(std::move(provenances));
+	Weighing2 probe(std::move(provenances), false);
 	auto iterator = cache.find(&probe);
 	if (iterator != cache.end())
 	{
@@ -166,11 +121,21 @@ Weighing2* Weighing2::get_instance(std::vector<Part>&& provenances)
 	}
 	else
 	{
+		// The weighing is symmetric if pan_contents(..., Left) == pan_contents(..., Right)
+		// This means that swapping left and right pan would not change the selection
+		// Since the output parts are listed in order of ascending part size it is not easy to
+		// determine if this is true.  We will compute it now and modify the probe if necessary
+		auto left_parts = probe.pan_contents(output, Placement::LeftPan);
+		auto right_parts = probe.pan_contents(output, Placement::RightPan);
+
 		// Create and return a cached instance of the partition
 		auto instance = std::make_unique<Weighing2>(std::move(probe));
 		auto result = instance.get();
+		if (left_parts == right_parts)
+		{
+			result->set_symmetric(true);
+		}
 		cache.insert(std::move(instance));
 		return result;
 	}
 }
-
