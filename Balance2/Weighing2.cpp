@@ -24,7 +24,7 @@ bool Weighing2::is_symmetric(const Partition2& output) const
 	// it does promise that all placements for the same part are adjacent and in placement order
 	// So we can make a single pass through to look for summetry violation
 	uint8_t left_pan = 0;
-	int part = -1;
+	uint8_t part = 255;
 	for (size_t i = 0; i != provenances.size(); ++i)
 	{
 		auto& p = provenances[i];

@@ -37,7 +37,7 @@ public:
 	struct Part
 	{
 		auto operator<=>(const Part&) const = default;
-		int part;					// Input part number whose coins are sent into this output part
+		uint8_t part;				// Input part number whose coins are sent into this output part
 		Placement placement;		// The pan into which these coins were placed during the weighing
 	};
 	
