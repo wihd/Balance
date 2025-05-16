@@ -12,9 +12,11 @@
 #include "StateTemplates.h"
 #include "Partition2.hpp"
 #include "Weighing2.hpp"
+#include "Output2.hpp"
 
 // Our class must be a valid Problem (i.e. must be compatible with the manager)
 static_assert(Problem<ProblemFindMajority2>);
+
 
 // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Distribute coins
@@ -700,4 +702,115 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 	
 	// Finally we can return a state, moving the distributions array into it
 	return std::make_unique<StateType>(std::move(distributions), partition);
+}
+
+bool ProblemFindMajority2::is_solved(const StateType& state)
+{
+	// Return true if this state answers the problem.
+	// Unlike earlier version we do not need to be concerned that state might be impossible, since we omit such states
+	// We count the number of H coins in each distribution
+	// The problem is resolved if H is in majority or in the minority for each case
+	assert(!state.distributions.empty());
+	bool seen_majority = false;
+	bool seen_minority = false;
+	for (auto& distribution : state.distributions)
+	{
+		if (is_majority(distribution))
+		{
+			if (seen_minority)
+			{
+				// We have seen both majority and minority distributions, so we have not resolved the problem
+				return false;
+			}
+			seen_majority = true;
+		}
+		else if (seen_majority)
+		{
+			return false;
+		}
+		else
+		{
+			seen_minority = true;
+		}
+	}
+	
+	// All of the remaining distributions agreed on whether or not H was in the majority
+	// So the problem is solved after this sequence of weighings
+	// Alternatively there might not have been any distributions (in which case this is an impossible
+	// configuration, not a solved one).  But it still counts as resolved.
+	return true;
+}
+
+void ProblemFindMajority2::write_description(Output2& output)
+{
+	// Output a description of the problem we want to solve
+	output.println("Problem:   Identify majority coin variety from {} coins, each variety has [{}, {}] coins",
+				   coin_count, minimum_count, maximum_count);
+}
+
+void ProblemFindMajority2::write_solved_node(Output2& output, const StateType& state, const char* outcome_name)
+{
+	// Output a description of why a node is solved
+	// We should introduce the description with the given outcome name
+	auto& distributions = state.distributions;
+	assert(!state.distributions.empty());
+	assert(is_solved(state));
+	
+	// If there is only one description we will write it on one line
+	if (distributions.size() == 1)
+	{
+		output.println("{} <Solved: Majority {}>  Heavy-Coins-per-Part: {}",
+					   outcome_name,
+					   is_majority(distributions[0]) ? "Heavy" : "Light",
+					   distributions[0]);
+	}
+	else
+	{
+		// We need multiple lines to describe the state
+		output.println("{} <Majority {}>  Multiple-Distributions: {} {{",
+					   outcome_name,
+					   is_majority(distributions[0]) ? "Heavy" : "Light",
+					   distributions.size());
+		output.indent();
+		for (auto& distribution : distributions)
+		{
+			output.println("Heavy-Coins-per-Part: {}", distribution);
+		}
+		output.outdent();
+		output << "}";
+	}
+}
+
+void ProblemFindMajority2::write_ambiguous_state(Output2& output, const StateType& state)
+{
+	// The caller provides a state (and corresponding partition although not needed here)
+	// The caller already knows (via other calls to the problem) that there is insufficient information
+	// in the state to solve the problem.  We generate a text description stating what we known
+	int count_minority = 0;
+	int count_majority = 0;
+	for (auto& d : state.distributions)
+	{
+		if (is_majority(d))
+		{
+			++count_majority;
+		}
+		else
+		{
+			++count_minority;
+		}
+	}
+	
+	// We always display it with multiple lines
+	// We don't provide an outcome name - the assumption is that we will also report information about children
+	output.println("State:     Ambiguous: Heavy Majority: {};  Light Majority: {}  {{",
+				   count_majority, count_minority);
+	output.indent();
+	for (auto& distribution : state.distributions)
+	{
+		output.println("{} Majority with Heavy-Coins-per-Part: {}",
+					   is_majority(distribution) ? "Heavy" : "Light",
+					   distribution);
+	}
+	output.outdent();
+	output << "}";
 }

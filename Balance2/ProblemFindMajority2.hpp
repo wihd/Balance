@@ -16,6 +16,7 @@
 #include "Types2.h"
 class Partition2;
 class Weighing2;
+class Output2;
 
 /**
  Problem class that determines which of two varieties of coins are in the majority.
@@ -55,6 +56,10 @@ public:
 	OutcomeArray<StateTypeRef> apply_weighing(const StateType& state,
 											  Weighing2* weighing,
 											  Partition2* partition);
+	bool is_solved(const StateType& state);
+	void write_description(Output2& output);
+	void write_solved_node(Output2& output, const StateType& state, const char* outcome_name);
+	void write_ambiguous_state(Output2& output, const StateType& state);
 
 private:
 	uint8_t coin_count;					// Solve the problem for this number of coins
