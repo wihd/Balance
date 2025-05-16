@@ -681,7 +681,8 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 	{
 		// The sorting will not have induced any change in the partition
 		// But it will require us to sort the distributions
-		// Since we own the distributions we can reuse their vectors to reduce allocations
+		// We will sort them in place, since we own the distributions
+		// Thus we only need one temporary row
 		Distribution temp(partition->size());
 		for (auto& d : distributions)
 		{
@@ -693,5 +694,10 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 		}
 	}
 	
-	return {};
+	// The order of the distributions is immaterial, so we will sort them lexiographically
+	// The point here is to ensure that two distributions we compare as equal if they are equal
+	std::sort(distributions.begin(), distributions.end());
+	
+	// Finally we can return a state, moving the distributions array into it
+	return std::make_unique<StateType>(std::move(distributions), partition);
 }
