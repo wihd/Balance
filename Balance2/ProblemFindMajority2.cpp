@@ -5,12 +5,152 @@
 //  Created by William Hurwood on 5/15/25.
 //
 #include <cassert>
+#include <ranges>
 #include "ProblemFindMajority2.hpp"
 #include "StateTemplates.h"
 #include "Partition2.hpp"
+#include "Weighing2.hpp"
 
 // Our class must be a valid Problem (i.e. must be compatible with the manager)
 static_assert(Problem<ProblemFindMajority2>);
+
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Distribute coins
+
+// During a weighing an input part may be split into up to three parts
+// We create little Splitter iterators to desribe what could happen to coins in the part
+// A splitter does not care about the location of each part
+// Since there are never more than three outputs to the split, we will handwrite code for each possibility
+// rather than writing a generic n-way splitter.  We expect that one or two way splits will be common
+// so this should provide useful optimisation.
+
+
+// We need a base class to allow code to select splitter at run time
+class Splitter
+{
+public:
+	Splitter(std::vector<uint8_t>& indexes) : indexes(indexes) {}
+	virtual ~Splitter() {}
+
+	// Specify number of H coins in distribution to be split
+	void set_count(uint8_t new_count) { count = new_count; }
+	
+	// Reset the iterator to start again
+	virtual void reset() = 0;
+	
+	// It the iterator is currently pointing to a valid split of the count assign it into the distribution, then
+	// advance the iterator and return true
+	// Alternatively return false
+	virtual bool advance(ProblemFindMajority2::Distribution& distribution, const Partition2& output_partition) = 0;
+	
+	// Reset the splitter and immediately advance to its first entry
+	void restart(ProblemFindMajority2::Distribution& distribution, const Partition2& output_partition)
+	{
+		reset();
+		advance(distribution, output_partition);
+	}
+
+protected:
+	std::vector<uint8_t>& indexes;		// Vector listing the indexes of our output parts
+	uint8_t count = 0;					// Number of H coins split over the output
+};
+
+// Simplest splitter only has one output, so it does not do any splitting
+class SplitterOne : public Splitter
+{
+public:
+	using Splitter::Splitter;
+	void reset() override { has_visited = false; }
+	bool advance(ProblemFindMajority2::Distribution& distribution, const Partition2& output_partition) override;
+
+private:
+	bool has_visited = false;
+};
+
+bool SplitterOne::advance(ProblemFindMajority2::Distribution& distribution, const Partition2&)
+{
+	// Since there is only one way to split the input, all we care about is whether this is first invocation or not
+	// The output_partition is ignored, since input and output part size must be identical
+	if (has_visited)
+	{
+		return false;
+	}
+	else
+	{
+		has_visited = true;
+		distribution[indexes[0]] = count;
+		return true;
+	}
+}
+
+// If there are two output parts then we get count+1 ways of splitting
+class SplitterTwo : public Splitter
+{
+public:
+	using Splitter::Splitter;
+	void reset() override { next_a_count = 0; }
+	bool advance(ProblemFindMajority2::Distribution& distribution, const Partition2& output_partition) override;
+	
+private:
+	uint8_t next_a_count = 0;
+};
+
+bool SplitterTwo::advance(ProblemFindMajority2::Distribution& distribution, const Partition2& partition)
+{
+	// Is the next distribution viable?
+	// We must reject the distribution if it puts more H coins into a part than there are coins in the part
+	while (next_a_count <= count)
+	{
+		distribution[indexes[0]] = next_a_count;
+		distribution[indexes[1]] = count - next_a_count;
+		++next_a_count;
+		if (distribution[indexes[0]] <= partition[indexes[0]] && distribution[indexes[1]] <= partition[indexes[1]])
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+// The most complex case is when the part is split three ways
+class SplitterThree : public Splitter
+{
+public:
+	using Splitter::Splitter;
+	void reset() override { next_a_count = 0; next_b_count = 0; }
+	bool advance(ProblemFindMajority2::Distribution& distribution, const Partition2& output_partition) override;
+	
+private:
+	uint8_t next_a_count = 0;
+	uint8_t next_b_count = 0;
+};
+
+bool SplitterThree::advance(ProblemFindMajority2::Distribution& distribution, const Partition2& partition)
+{
+	// Is the next distribution viable?
+	// We must reject the distribution if it puts more H coins into a part than there are coins in the part
+	while (next_a_count + next_b_count <= count)
+	{
+		distribution[indexes[0]] = next_a_count;
+		distribution[indexes[1]] = next_b_count;
+		distribution[indexes[2]] = count - next_a_count - next_b_count;
+		
+		// If incrementing a is still viable then that's what we do next
+		if (++next_a_count + next_b_count > count)
+		{
+			// Reset a and increment b - since this is a three way split we have no fallback if this is not viable
+			next_a_count = 0;
+			++next_b_count;
+		}
+		if (distribution[indexes[0]] <= partition[indexes[0]] &&
+			distribution[indexes[1]] <= partition[indexes[1]] &&
+			distribution[indexes[2]] <= partition[indexes[2]])
+		{
+			return true;
+		}
+	}
+	return false;
+}
 
 
 // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -64,4 +204,131 @@ ProblemFindMajority2::StateType ProblemFindMajority2::make_root(Partition2* part
 		result.push_back({i});
 	}
 	return {result, partition};
+}
+
+// Confirm that a weighing that does not refine the input partition is stable with respect to part order
+bool check_part_order(Weighing2* weighing)
+{
+	uint8_t index = 0;
+	for (auto& part : *weighing)
+	{
+		if (part.part != index)
+		{
+			return false;
+		}
+		++index;
+	}
+	return true;
+}
+
+OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_weighing(const StateType& state,
+																					  Weighing2* weighing,
+																					  Partition2* partition)
+{
+	// We are given a state and a weighing leading to an output partition
+	// We must compute up to three states and return them, one for each outcome of the weighing
+	// We will omit an output state if the corresponding outcome is impossible based on what we already know
+	// If possible we will perform two optimisations intended to reduce number of states we consider
+	// 1. We may be able to merge some parts in the output partition (fewer parts means fewer future weighings)
+	// 2. We may return a state that is isomorphic to the actual state (reducing number of states considered)
+	
+	// Each distribution in the input state will be mapped to a distribution over the output partition
+	// If the output partition is refined (i.e. some parts are split) then a distribution may be mapped to
+	// several output distributions (since the H coins may be split over the output parts in various ways).
+	
+	// The weighing refines the partitions if and only if the output partition has more parts
+	if (partition->size() != state.partition->size())
+	{
+		// At least one part must be split.  Even a part is not split its index may change.
+		// So we need to compute a new Distributions object
+
+		// We will start by creating a vector listing for each input part the output part(s) over which it is split
+		// In the earlier version this was not needed since output parts from the same input part were placed
+		// together, but the requirement that part sizes do not decrement means this is no longer true
+		std::vector<std::vector<uint8_t>> split_indexes(state.partition->size());
+		for (uint8_t i = 0; i != weighing->size(); ++i)
+		{
+			split_indexes[(*weighing)[i].part].push_back(i);
+		}
+		
+		// We now create a vector of splitters, which will handle splitting and reordering
+		std::vector<std::unique_ptr<Splitter>> splitters;
+		for (auto& split_index : split_indexes)
+		{
+			switch (split_index.size())
+			{
+				case 1:
+					splitters.push_back(std::make_unique<SplitterOne>(split_index));
+					break;
+				case 2:
+					splitters.push_back(std::make_unique<SplitterTwo>(split_index));
+					break;
+				case 3:
+					splitters.push_back(std::make_unique<SplitterThree>(split_index));
+					break;
+				default:
+					// Split counts should always be 1, 2 or 3
+					assert(false);
+			}
+		}
+		
+		// Apply the splitters to determine what happens to each distribution
+		Distributions split_distributions;
+		Distribution current(partition->size(), 0);
+		for (auto& distribution : state.distributions)
+		{
+			// Configure the splitters with the number of H coins in each input part
+			// C++23 Note: We can have option to iterate over two collections together
+			for (auto [h_count, splitter] : std::views::zip(distribution, splitters))
+			{
+				splitter->set_count(h_count);
+			}
+
+			// Restart all of the splitters (which will overwrite all entries in `current` to a valid output distribution)
+			for (auto& splitter : splitters)
+			{
+				splitter->restart(current, *partition);
+			}
+			
+			// Loop over ways of splitting this distribution
+			auto advanced_splitter = splitters.begin();
+			while (advanced_splitter != splitters.end())
+			{
+				// Copy the current distribution to split_distributions
+				split_distributions.emplace_back(current.begin(), current.end());
+			}
+
+			// We walk through the splitters, trying to find one that can be advanced
+			for (advanced_splitter = splitters.begin(); advanced_splitter != splitters.end(); ++advanced_splitter)
+			{
+				// Are we able to advance this splitter?
+				if ((*advanced_splitter)->advance(current, *partition))
+				{
+					// All the splitters that had finished must be restarted
+					// Note that since all the splitters write into different parts of current it does not
+					// matter that we advanced them in uneven order
+					for (auto it = splitters.begin(); it != advanced_splitter; ++it)
+					{
+						(*it)->restart(current, *partition);
+					}
+					
+					// Break to leave any remaining splitters in place
+					// Also we must leave advance_splitter pointing to an actual splitter
+					break;
+				}
+			}
+		} // next input distribution
+		
+		// We now have list of distributions to process
+		return apply_weighing_to_distributions(split_distributions);
+	}
+	else
+	{
+		// This weighing does not split any parts in the distributions
+		// The logic to construct weighings should be stable with respect to parts unless part size forces
+		// it to change the order.  Since part size did not change the order should not change either.
+		// Thus we can pass the input distributions onto the next function without any modifications.
+		assert(check_part_order(weighing));
+		return apply_weighing_to_distributions(state.distributions);
+	}
 }

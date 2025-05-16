@@ -47,7 +47,8 @@ public:
 	bool is_symmetric(const Partition2& output) const { return _is_symmetric; }
 	size_t input_size() const;
 	std::vector<uint8_t> input_parts(const Partition2& output_partition) const;
-	const Part& provenance(size_t index) const { return provenances[index]; }
+	size_t size() const { return provenances.size(); }
+	const Part& operator[](size_t index) const { return provenances[index]; }
 	auto begin() const { return provenances.begin(); }
 	auto end() const { return provenances.end(); }
 	std::vector<uint8_t> pan_contents(const Partition2& output, Placement placement) const;

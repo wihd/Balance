@@ -13,7 +13,9 @@
 #define ProblemFindMajority2_hpp
 
 #include <vector>
+#include "Types2.h"
 class Partition2;
+class Weighing2;
 
 /**
  Problem class that determines which of two varieties of coins are in the majority.
@@ -44,11 +46,15 @@ public:
 		// Instruct compiler to generate operators to compare StateType objects
 		auto operator<=>(const StateType& other) const = default;
 	};
+	using StateTypeRef = std::unique_ptr<StateType>;
 	
 	ProblemFindMajority2(uint8_t coin_count, bool is_almost_balanced = true);
 	
 	// Implement methods required to be a problem
 	StateType make_root(Partition2* partition);
+	OutcomeArray<StateTypeRef> apply_weighing(const StateType& state,
+											  Weighing2* weighing,
+											  Partition2* partition);
 
 private:
 	uint8_t coin_count;					// Solve the problem for this number of coins
@@ -58,6 +64,7 @@ private:
 	
 	// Helper functions
 	bool is_majority(const Distribution& distribution);
+	OutcomeArray<StateTypeRef> apply_weighing_to_distributions(const Distributions& distributions);
 };
 
 #endif /* ProblemFindMajority2_hpp */

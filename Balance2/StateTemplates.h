@@ -9,7 +9,7 @@
 #define StateTemplates_h
 
 #include <concepts>
-#include "Types.h"
+#include "Types2.h"
 
 // We declare templates and concepts that will be used both by Problem classes and by the Manager
 // that tracks solving a problem
