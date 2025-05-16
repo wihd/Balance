@@ -64,7 +64,11 @@ private:
 	
 	// Helper functions
 	bool is_majority(const Distribution& distribution);
-	OutcomeArray<StateTypeRef> apply_weighing_to_distributions(const Distributions& distributions);
+	OutcomeArray<StateTypeRef> apply_weighing_to_distributions(const Distributions& distributions,
+															   Weighing2& weighing,
+															   Partition2* partition);
+	StateTypeRef simplify_partition(const std::vector<const Distribution*>& distributions, Partition2* partition);
+	StateTypeRef simplify_state(const std::vector<const Distribution*>& distributions, Partition2* partition);
 };
 
 #endif /* ProblemFindMajority2_hpp */

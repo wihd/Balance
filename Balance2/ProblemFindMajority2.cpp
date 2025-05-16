@@ -6,6 +6,7 @@
 //
 #include <cassert>
 #include <ranges>
+#include <algorithm>
 #include "ProblemFindMajority2.hpp"
 #include "StateTemplates.h"
 #include "Partition2.hpp"
@@ -320,7 +321,7 @@ OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_wei
 		} // next input distribution
 		
 		// We now have list of distributions to process
-		return apply_weighing_to_distributions(split_distributions);
+		return apply_weighing_to_distributions(split_distributions, *weighing, partition);
 	}
 	else
 	{
@@ -329,6 +330,250 @@ OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_wei
 		// it to change the order.  Since part size did not change the order should not change either.
 		// Thus we can pass the input distributions onto the next function without any modifications.
 		assert(check_part_order(weighing));
-		return apply_weighing_to_distributions(state.distributions);
+		return apply_weighing_to_distributions(state.distributions, *weighing, partition);
 	}
+}
+
+OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_weighing_to_distributions(
+	const Distributions& distributions, Weighing2& weighing, Partition2* partition)
+{
+	// This is a helper function for apply_weighing()
+	// The distributions passed in will have been split to use the output partition
+	// In some cases these may be the input distributions, so this function cannot modify or move them
+	
+	// Assign each distribution to one of the three possible outcomes
+	OutcomeArray<std::vector<const Distribution*>> outcome_distributions;
+	for (auto& current : distributions)
+	{
+		// We must allocate it to one of the three outcome sets based on the outcome of the weighing
+		// when this distribution is used
+		// Count number of H coins placed in each pan by this distribution
+		int count_left = 0;
+		int count_right = 0;
+		for (size_t i = 0; i != weighing.size(); ++i)
+		{
+			switch (weighing[i].placement)
+			{
+				case LeftPan:
+					count_left += current[i];
+					break;
+				case RightPan:
+					count_right += current[i];
+					break;
+				case SetAside:
+					break;
+			}
+		}
+		
+		// Insert (a pointer to) current distribution into one of the three output sets based on what would happen
+		if (count_left > count_right)
+		{
+			outcome_distributions[Outcome::LeftHeavier].push_back(&current);
+		}
+		else if (count_right > count_left)
+		{
+			outcome_distributions[Outcome::RightHeavier].push_back(&current);
+		}
+		else
+		{
+			outcome_distributions[Outcome::Balances].push_back(&current);
+		}
+	}
+	
+	// We have computed the output state, but we might be able to simplify it
+	OutcomeArray<ProblemFindMajority2::StateTypeRef> result;
+	for (int i = Outcome::Begin; i != Outcome::End; ++i)
+	{
+		result[i] = simplify_partition(outcome_distributions[i], partition);
+	}
+	return result;
+}
+
+// Define helper types and functions for simplify_partition
+using GroupType = std::pair<std::vector<size_t>, uint8_t>;
+constexpr uint8_t UniquePartMarker = 0xff;
+bool compare_groups(const GroupType& a, const GroupType& b)
+{
+	// Sort groups into ascending order by part size, otherwise stable with respect to input part index
+	if (a.second != b.second)
+	{
+		return a.second < b.second;
+	}
+	
+	// We use UniquePartMarker as a magic number, so we skip over it if it is present
+	auto a_it = a.first.begin();
+	if (*a_it == UniquePartMarker)
+	{
+		++a_it;
+	}
+	auto b_it = b.first.begin();
+	if (*b_it == UniquePartMarker)
+	{
+		++b_it;
+	}
+	return *a_it < *b_it;
+}
+
+ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_partition(
+	const std::vector<const Distribution*>& distributions, Partition2* partition)
+{
+	// If there are no distributions then this outcome is impossible
+	// There is no point in having a non-null state for an impossible outcome
+	if (distributions.empty())
+	{
+		return {};
+	}
+	
+	// We would obtain the correct solution if we just returned the distribtions + partition we already have
+	// But we will attempt several optimisations which have potential to considerably reduce work done
+	
+	// First we observe that we are not required to use the output partion we were given
+	// If can identify several coins whose distribution is identical then in future weighings we can
+	// treat these coins as indistiguishable.  To be more precise although we can distinguish between
+	// these coins there is no reason to do so.  For example if we have proven that several coins are H
+	// then we can put these coins into one part.  If three coins get grouped together it halves the
+	// number of weighings we need to consider, so this can be a significant improvement.
+
+	// Identify the columns that could be joined together
+	std::vector<GroupType> groups;
+	for (size_t index = 0; index != partition->size(); ++index)
+	{
+		// To be able to merge parts we require that for all distributions, all of the coins the part
+		// are either H or L.  This means that there is no point in distinguishing between these coins.
+		uint8_t part_size = (*partition)[index];
+		bool is_candidate = true;
+		
+		// If the part only contains one coin then the coins in the part are vacuously not worth distinshing
+		// But if there is more than one coin in the part we must examine all distributions
+		if (part_size > 1)
+		{
+			for (auto distribution_ptr : distributions)
+			{
+				if ((*distribution_ptr)[index] != 0 && (*distribution_ptr)[index] != part_size)
+				{
+					// This distribution does not treat all the coins in the part as identical
+					// So this part cannot be joined
+					is_candidate = false;
+					break;
+				}
+			}
+		}
+		
+		if (is_candidate)
+		{
+			// Look at the groups we have already identified
+			for (auto& group : groups)
+			{
+				// Compare coins distributed on our part with one of the part(s) already in the group
+				size_t sample_index = group.first.front();
+				
+				// If the groups first index is magic number UniquePartMarker then we cannot join with it
+				if (sample_index == UniquePartMarker)
+				{
+					continue;
+				}
+				
+				// Can we join with tihs group?
+				bool can_join = true;
+				for (auto distribution_ptr : distributions)
+				{
+					// Both parts must have non-zero H coins in the same pattern
+					bool is_zero = (*distribution_ptr)[index] == 0;
+					bool sample_is_zero = (*distribution_ptr)[sample_index] == 0;
+					if ((is_zero && !sample_is_zero) || (!is_zero && sample_is_zero))
+					{
+						can_join = false;
+						break;
+					}
+				}
+				if (can_join)
+				{
+					// Add this index to the group
+					group.first.push_back(index);
+					group.second += part_size;
+					is_candidate = false;
+					break;
+				}
+			}
+
+			// Is this part still marked as a candidate to join?
+			if (is_candidate)
+			{
+				// We insert it as a fresh group with one part in it so far
+				groups.emplace_back(std::vector<size_t>{index}, part_size);
+			}
+		}
+		else
+		{
+			// If this part cannot be joined we just add it to list of groups
+			groups.emplace_back(std::vector<size_t>{UniquePartMarker, index}, part_size);
+		}
+	}
+	
+	// Have we ended up with fewer groups than we started with parts?
+	if (groups.size() != partition->size())
+	{
+		// It is worth switching to a different partition
+		// We start by sorting the groups because the merged parts must be in ascending order by size
+		std::sort(groups.begin(), groups.end(), compare_groups);
+		
+		// Get the cached instance of the joined partition
+		std::vector<uint8_t> joined_parts;
+		for (auto& group : groups)
+		{
+			joined_parts.push_back(group.second);
+		}
+		auto joined_partion = Partition2::get_instance(std::move(joined_parts));
+		
+		// We must allocate new distributions that are owned in this stack frame
+		Distributions joined_distributions(distributions.size());
+		for (size_t i = 0; i != distributions.size(); ++i)
+		{
+			const Distribution& input = *distributions[i];
+			Distribution& output = joined_distributions[i];
+			
+			// Each group specifies the part(s) to be joined to make the next value in the output distribution
+			for (auto& group : groups)
+			{
+				auto it = group.first.begin();
+				if (*it == UniquePartMarker)
+				{
+					// This group was not joined, so we can copy over a single part
+					++it;
+					output.push_back(input[*it]);
+				}
+				else
+				{
+					// Create new entry in output distribution
+					output.push_back(input[*it]);
+					
+					// Join in other distributions
+					for (++it; it != group.first.end(); ++it)
+					{
+						output.back() += input[*it];
+					}
+				}
+			}
+		}
+		
+		// In order to not need to perform any allocations on the happy path (where we do not join)
+		// the next function is expecting a vector of pointers to distribution
+		// So we need to manufacture that here to call the function
+		std::vector<const Distribution*> joined_ptr_distributions;
+		joined_ptr_distributions.resize(joined_distributions.size());
+		for (auto& d : joined_distributions)
+		{
+			joined_ptr_distributions.push_back(&d);
+		}
+		
+		// Call next level function that will look for more optimisations
+		return simplify_state(joined_ptr_distributions, joined_partion);
+	}
+	else
+	{
+		// We will stick with the original output partition
+		return simplify_state(distributions, partition);
+	}
+	
+	return {};
 }
