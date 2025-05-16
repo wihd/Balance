@@ -68,7 +68,7 @@ private:
 															   Weighing2& weighing,
 															   Partition2* partition);
 	StateTypeRef simplify_partition(const std::vector<const Distribution*>& distributions, Partition2* partition);
-	StateTypeRef simplify_state(const std::vector<const Distribution*>& distributions, Partition2* partition);
+	StateTypeRef simplify_state(Distributions&& distributions, Partition2* partition);
 };
 
 #endif /* ProblemFindMajority2_hpp */

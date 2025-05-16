@@ -7,6 +7,7 @@
 #include <cassert>
 #include <ranges>
 #include <algorithm>
+#include <numeric>
 #include "ProblemFindMajority2.hpp"
 #include "StateTemplates.h"
 #include "Partition2.hpp"
@@ -525,7 +526,7 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_partition(
 		}
 		auto joined_partion = Partition2::get_instance(std::move(joined_parts));
 		
-		// We must allocate new distributions that are owned in this stack frame
+		// We must allocate new distributions
 		Distributions joined_distributions(distributions.size());
 		for (size_t i = 0; i != distributions.size(); ++i)
 		{
@@ -555,24 +556,141 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_partition(
 				}
 			}
 		}
-		
-		// In order to not need to perform any allocations on the happy path (where we do not join)
-		// the next function is expecting a vector of pointers to distribution
-		// So we need to manufacture that here to call the function
-		std::vector<const Distribution*> joined_ptr_distributions;
-		joined_ptr_distributions.resize(joined_distributions.size());
-		for (auto& d : joined_distributions)
-		{
-			joined_ptr_distributions.push_back(&d);
-		}
-		
+				
 		// Call next level function that will look for more optimisations
-		return simplify_state(joined_ptr_distributions, joined_partion);
+		return simplify_state(std::move(joined_distributions), joined_partion);
 	}
 	else
 	{
 		// We will stick with the original output partition
-		return simplify_state(distributions, partition);
+		// However the next function requires a distributions vector that it can both move and modify
+		// In the other branch this was easy (it made a new distributions anyway)
+		// In this branch we need to make a copy (we didn't do it earlier in case we entered other branch)
+		Distributions copy_distributions;
+		copy_distributions.reserve(distributions.size());
+		for (auto& d : distributions)
+		{
+			copy_distributions.emplace_back(d->begin(), d->end());
+		}
+		
+		return simplify_state(std::move(copy_distributions), partition);
+	}
+}
+
+// Helper class to help compare two parts with respect to a distribution
+class PartCompareHelper
+{
+public:
+	PartCompareHelper(const ProblemFindMajority2::Distributions& distributions,
+					  size_t index,
+					  uint8_t part_size) :
+	distributions(distributions), values{part_size}, index(index) {}
+	uint8_t operator[](size_t i);
+	
+private:
+	const ProblemFindMajority2::Distributions& distributions;	// Distributions
+	std::vector<size_t> values;									// Compare values we have computed
+	size_t index;												// Index number of this part
+};
+
+uint8_t PartCompareHelper::operator[](size_t i)
+{
+	// If we have already computed a value for entry i, return cached value
+	// Note that since the first value is the part_size, it will sort by part_size first of all
+	if (i < values.size())
+	{
+		return i;
+	}
+	
+	// We expect caller to ask for each value in turn, so we only need compute the next value
+	assert(i == values.size());
+	
+	// We will count the number of distributions that have size i+1
+	bool saw_larger = false;
+	size_t counter = 0;
+	for (auto& distribution : distributions)
+	{
+		if (distribution[index] == i + 1)
+		{
+			++counter;
+		}
+		else if (distribution[index] > i + 1)
+		{
+			saw_larger = true;
+		}
+	}
+	
+	// Cache this number
+	values.push_back(counter);
+	
+	// If there were no bigger values then there is no point in looking again
+	if (!saw_larger)
+	{
+		// Push a value based on the index number into the vector
+		// This will have two effects
+		// i)  By making number bigger than distributions size() we know that it will disambiguate all parts
+		// ii) We keep part order stable when there is no reason to sort them
+		// Stability is important because we do not want to make changes when it is immaterial
+		values.push_back(distributions.size() + 1 + index);
+	}
+	return counter;
+}
+
+ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distributions&& distributions,
+																		Partition2* partition)
+{
+	// Caller has supplied us with a non-empty list of distributions and a simplified output partition
+	// We could just return this as a state
+	// But we observe that many states are isomorphic in the sense that if we reordered the parts
+	// then we would obtain the same state.  We will attempt to put the state into a canonical form
+	
+	// First we sort the parts
+	// If two parts have different sizes then their relative order is fixed by partition
+	// But if two parts have the same size then switching them around has no effect on solving the problem
+	// So we will sort them into ascending order by the histogram of the H counts in distributions
+	// Since aome parts will never need the histogram, and others will only need a few entries we will
+	// use helper classes that compute histogram on demand
+	std::vector<PartCompareHelper> helpers;
+	for (size_t i = 0; i != partition->size(); ++i)
+	{
+		helpers.emplace_back(distributions, i, (*partition)[i]);
+	}
+	
+	// We will actually sort an array of index numbers
+	std::vector<size_t> sorted_indexes(partition->size());
+	std::iota(sorted_indexes.begin(), sorted_indexes.end(), 0);
+	std::sort(sorted_indexes.begin(), sorted_indexes.end(),
+			  [&helpers](auto a, auto b) -> bool {
+		// Keep fetching values from both indexes until values are different
+		// Since each sequence of values ends in a value not otherwise used it must find a difference
+		// before it reaches end of sequence, even though different a and b have different lengths
+		size_t i = 0;
+		size_t a_value = 0;
+		size_t b_value = 0;
+		do
+		{
+			a_value = helpers[a][i];
+			b_value = helpers[b][i];
+			++i;
+		} while (a_value == b_value);
+		return a_value < b_value;
+	});
+	
+	// Did the sorting actually make any difference?
+	if (!std::is_sorted(sorted_indexes.begin(), sorted_indexes.end()))
+	{
+		// The sorting will not have induced any change in the partition
+		// But it will require us to sort the distributions
+		// Since we own the distributions we can reuse their vectors to reduce allocations
+		Distribution temp(partition->size());
+		for (auto& d : distributions)
+		{
+			for (size_t i = 0; i != partition->size(); ++i)
+			{
+				temp[i] = d[sorted_indexes[i]];
+			}
+			d.swap(temp);
+		}
 	}
 	
 	return {};
