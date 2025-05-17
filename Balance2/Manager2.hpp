@@ -324,9 +324,10 @@ size_t Manager2<P>::expand(const Iterator& node)
 	// We cache the distinct weighings for each partition (omitting some weighings which are always
 	// solvable by symmetry of the balance).  Iterate through each of these weighings.
 	Partition2* partition = key.partition;
-	for (auto [weighing, output] : partition->get_children())
+	for (auto [weighing, output_partition] : partition->get_children())
 	{
-		
+		// Ask the problem to determine the output state (for each outcome) when applying this weighing to our state
+		auto outcomes = problem.apply_weighing(key, weighing, output_partition);
 	}
 	return 0;
 }

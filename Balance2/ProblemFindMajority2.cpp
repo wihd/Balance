@@ -300,27 +300,27 @@ OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_wei
 			{
 				// Copy the current distribution to split_distributions
 				split_distributions.emplace_back(current.begin(), current.end());
-			}
-
-			// We walk through the splitters, trying to find one that can be advanced
-			for (advanced_splitter = splitters.begin(); advanced_splitter != splitters.end(); ++advanced_splitter)
-			{
-				// Are we able to advance this splitter?
-				if ((*advanced_splitter)->advance(current, *partition))
+				
+				// We walk through the splitters, trying to find one that can be advanced
+				for (advanced_splitter = splitters.begin(); advanced_splitter != splitters.end(); ++advanced_splitter)
 				{
-					// All the splitters that had finished must be restarted
-					// Note that since all the splitters write into different parts of current it does not
-					// matter that we advanced them in uneven order
-					for (auto it = splitters.begin(); it != advanced_splitter; ++it)
+					// Are we able to advance this splitter?
+					if ((*advanced_splitter)->advance(current, *partition))
 					{
-						(*it)->restart(current, *partition);
+						// All the splitters that had finished must be restarted
+						// Note that since all the splitters write into different parts of current it does not
+						// matter that we advanced them in uneven order
+						for (auto it = splitters.begin(); it != advanced_splitter; ++it)
+						{
+							(*it)->restart(current, *partition);
+						}
+						
+						// Break to leave any remaining splitters in place
+						// Also we must leave advance_splitter pointing to an actual splitter
+						break;
 					}
-					
-					// Break to leave any remaining splitters in place
-					// Also we must leave advance_splitter pointing to an actual splitter
-					break;
 				}
-			}
+			} // next splitter distribution
 		} // next input distribution
 		
 		// We now have list of distributions to process
