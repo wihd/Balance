@@ -111,7 +111,7 @@ Partition2::Child Generator::get() const
 	std::vector<uint8_t> output_parts;
 	std::vector<Weighing2::Part> provenances;
 	output_parts.reserve(items.size());
-	provenances.resize(items.size());
+	provenances.reserve(items.size());
 	for (auto& item : items)
 	{
 		output_parts.push_back(item.part_size);
