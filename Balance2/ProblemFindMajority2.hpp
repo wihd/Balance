@@ -52,7 +52,7 @@ public:
 	ProblemFindMajority2(uint8_t coin_count, bool is_almost_balanced = true);
 	
 	// Implement methods required to be a problem
-	StateType make_root();
+	StateTypeRef make_root();
 	OutcomeArray<StateTypeRef> apply_weighing(const StateType& state,
 											  Weighing2* weighing,
 											  Partition2* partition);

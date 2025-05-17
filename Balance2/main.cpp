@@ -14,11 +14,16 @@
 
 // Maybe this will make c=11 feasible.  My goal is to cover c=15, but I must say that this
 // seems to be unlikely to be achievable.
+#include <print>
+#include "Manager2.hpp"
+#include "ProblemFindMajority2.hpp"
 
-#include <iostream>
+constexpr uint8_t coint_count = 3;
 
 int main(int argc, const char * argv[]) {
-	// insert code here...
-	std::cout << "Hello, World!\n";
+	// Instantiate a manager to solve a specific problem
+	Manager2<ProblemFindMajority2> manager(coint_count);
+	std::println("Coin count = {}", coint_count);
+	manager.solve_breadth(coint_count);
 	return 0;
 }
