@@ -11,6 +11,7 @@
 #include <memory>
 #include <vector>
 #include <map>
+#include <cassert>
 
 // The Manager template class is instantiated with a problem class instance
 // It will track problem states and ask the Problem class instance to compute the outcome of weighings
@@ -43,7 +44,7 @@ class Manager2
 		// For each of the three outcomes, record the resulting state
 		// We will use nullptr if an outcome leads to an impossible state
 		// The state object will be owned as a key of the manager's states map.
-		OutcomeArray<typename P::StateType*> state;
+		OutcomeArray<typename P::StateType*> keys;
 		
 		// For reporting we would like to know what weighing should be done (using list of weighings for
 		// the parent partition) to get to these states.  At solve time however this information is not needed.
@@ -78,11 +79,25 @@ class Manager2
 	class Iterator
 	{
 	public:
+		// Constructor starts with iterator at root of tree
 		Iterator(Manager2<P>& manager) : states(manager.states), path{manager.root} {}
+
+		// Accessors
+		bool is_root() const { return path.size() == 1; }
+		size_t depth() const { return child_numbers.size(); }
+		typename P::StateType& key() const { return *path.back()->first.get(); }
+		Status& value() const { return path.back()->second; }
+
+		// Modifiers
+		bool advance_first_child();
+		bool advance_parent();
+		bool advance_sibling();
+		void advance_prune();
 
 	private:
 		std::vector<typename StatesType::iterator> path;
 		std::vector<size_t> child_numbers;
+		std::vector<Outcome> outcomes;
 		StatesType& states;
 	};
 	friend class Iterator;
@@ -102,6 +117,131 @@ private:
 	// Helper methods
 	size_t expand(const Iterator& node);
 };
+
+template <Problem P>
+bool Manager2<P>::Iterator::advance_first_child()
+{
+	// Attempt to modify iterator by moving to its first expanded child
+	// Return true if made change
+	// return false if no children (and guarantee that iterator is not changed)
+	auto& children = value().children;
+	
+	// If the node has no children (either because we did not expand or it was already solved) then we cannot advance
+	if (children.empty())
+	{
+		return false;
+	}
+	
+	// Otherwise find the first outcome of this child that has a non-null key
+	// We never create a child unless it has at least two keys, so we will always find one
+	auto& child = children.front();
+	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
+	{
+		if (child.keys[outcome])
+		{
+			// Advance the iterator to this child
+			path.push_back(states.find(child.keys[outcome]));
+			assert(path.back() != states.end());
+			child_numbers.push_back(0);
+			outcomes.push_back(static_cast<Outcome>(outcome));
+			return true;
+		}
+	}
+	
+	// If we get here something is wrong!
+	assert(false);
+	return false;
+}
+
+template <Problem P>
+bool Manager2<P>::Iterator::advance_parent()
+{
+	// Attempt to modify iterator by moving to its parent
+	// Return true if made change, or false if there was no parent (i.e. started at root)
+	// Promise iterator is not changed if it returns false
+	if (is_root())
+	{
+		return false;
+	}
+	else
+	{
+		path.pop_back();
+		child_numbers.pop_back();
+		outcomes.pop_back();
+		return true;
+	}
+}
+
+template <Problem P>
+bool Manager2<P>::Iterator::advance_sibling()
+{
+	// Attempt to modify iterator by moving to a sibling node - that is the next existing node after the current
+	// node within its parent.  This method does NOT attempt to move to a cousin node
+	// Nodes that were never constructed are presumed to not exist - the advance methods will not move to them.
+	// Return true if made change
+	// return false if the node has no further sibling (iterator is not changed)
+	
+	// The root node has no siblings
+	if (is_root())
+	{
+		return false;
+	}
+	
+	// If we are not the root we must be able to examine the children of our parent node
+	auto& children = path[path.size() - 2]->second.children;
+	auto child_number = child_numbers.back();
+	auto& child = children[child_number];
+	
+	// The weighing used to get this node might have another outcome
+	for (int outcome = static_cast<int>(outcomes.back()) + 1; outcome != Outcome::End; ++outcome)
+	{
+		if (child.keys[outcome])
+		{
+			// We have another child of the same weighing
+			path.back() = states.find(child.keys[outcome]);
+			assert(path.back() != states.end());
+			// child_numbers was not changed
+			outcomes.back() = static_cast<Outcome>(outcome);
+			return true;
+		}
+	}
+
+	// If our parent node has no more weighings then it cannot have any more children
+	if (++child_number == children.size())
+	{
+		return false;
+	}
+
+	// There is another wighing, since weighings are always non-void, it has another child
+	auto& next_child = children[child_number];
+	for (int outcome = Outcome::Begin; outcome != Outcome::End; ++outcome)
+	{
+		if (next_child.keys[outcome])
+		{
+			// We have another child from the next weighing
+			path.back() = states.find(next_child.keys[outcome]);
+			assert(path.back() != states.end());
+			child_numbers.back() = child_number;
+			outcomes.back() = static_cast<Outcome>(outcome);
+			return true;
+		}
+	}
+	
+	// If we get here something is wrong!
+	assert(false);
+	return false;
+}
+
+template <Problem P>
+inline void Manager2<P>::Iterator::advance_prune()
+{
+	// We attempt to advance the iterator as little as possible, without ever reaching a child
+	// to obtain a new node.  This means it will call advance_parent() zero or more times, followed
+	// by a sucessful call to advance_sibling().
+	// This method will place the iterator on the root if it cannot find another node
+	while (!advance_sibling() && advance_parent())
+	{}
+}
 
 template<Problem P>
 void Manager2<P>::clear()
