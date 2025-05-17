@@ -22,12 +22,15 @@
 // paths to lead to the same state.  We are hoping for a significant reduction in the number of
 // states that we need to consider.
 #include "StateTemplates.h"
+#include "Partition2.hpp"
 #include "Types2.h"
 
 // Special resolved depth value that means that (so far) we have no estimate of resolved depth of node
 constexpr uint8_t DEPTH_INFINITY = 255;
 
 
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Declare class Manager2
 
 /**
  Manager class searches the state space of a problem looking for the shortest path to solve the problem.
@@ -64,13 +67,32 @@ class Manager2
 		// children of a node are equivalent so we should switch to a sparse list of children.
 		std::vector<Child> children;
 		
-		// Record depth below this node at which the problem can be solved.
-		// So value is 0 if this node records a state at which the problem is solved.
-		// Value is $n$ if this node has a child for which all of the outcomes are either impossible
-		// or have a resolved depth that is at most $n-1$.
-		// We use special value DEPTH_INFINITY if we have not found a suitable child.
-		// Note that a problem is always solvable from any state given sufficiently many weighings.
-		uint8_t resolved_depth = DEPTH_INFINITY;
+		// A solution for a node consists of a tree of children of the node such that each node's
+		// immediate children cover all of the outcomes of a single weighing, and every leaf is solved.
+		// The depth of the solution is the length of the longest path from the node to a leaf.
+		// The resolved depth of the node is the minimum possible depth of all solutions to the node.
+
+		// We record an upper bound for this node's resolved depth
+		// The special value DEPTH_INFINITY means that we do not have any ceiling on the resolved depth
+		// Setting this data member to 0 would indicate that the node is already solved
+		// As we explore the tree we may be able to reduce the `resolved_maximum`.
+		// If we find a weighing such that all three outcomes are either omitted or have a maximum depth
+		// of at most $d$ then we can infer that this node's maximum depth is at most $d+1$.
+		uint8_t depth_max = DEPTH_INFINITY;
+		
+		// We record a lower bound for this node's resolved depth
+		// Raising the lower bound is hard because we must consider all of the node's children.
+		// To set out minimum depth to $d+1$ we must show that every child weighing has at least one
+		// outcome whose minimum depth is at least $d$.
+		uint8_t depth_min = 0;
+		
+		// We always have depth_min <= depth_max.  If we have equality then we have resolved the depth
+		// for this node.  If we have resolved the depth for the root then we have solved the problem!
+		bool is_resolved() const { return depth_min == depth_max; }
+		
+		// On expanding a node either we will give the node children, or we will set depth to 0
+		// Only way a node can have a depth that isn't infinity is if it has been expanded - very minor optimisation!
+		bool is_expanded() const { return depth_max != DEPTH_INFINITY || !children.empty(); }
 	};
 	
 	using StatesType = std::map<Key, Status, PointerComparator<typename P::StateType>>;
@@ -117,6 +139,10 @@ private:
 	// Helper methods
 	size_t expand(const Iterator& node);
 };
+
+
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// class Manager2<P>::Iterator
 
 template <Problem P>
 bool Manager2<P>::Iterator::advance_first_child()
@@ -243,6 +269,10 @@ inline void Manager2<P>::Iterator::advance_prune()
 	{}
 }
 
+
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// class Manager2<P>
+
 template<Problem P>
 void Manager2<P>::clear()
 {
@@ -270,6 +300,34 @@ size_t Manager2<P>::expand(const Iterator& node)
 {
 	// Ensure that the node has full compliment of children, computing its depth if possible
 	// Return the number of children added to the node (if it was already expanded we return 0)
+	auto& key = node.key();
+	auto& status = node.value();
+	
+	// Since the "tree" is really a DAG we will often visit nodes multiple times
+	// An attempt to expand a node that was already expanded does nothing
+	if (status.is_expanded())
+	{
+		return 0;
+	}
+	
+	// The purpose of expanding a node is to potentially tighten the resolved depth of this node
+	// or one of its ancestors.  If that cannot happen then we should not expand this node.
+	// TODO: Work out implications of this
+	// We are concerned that if we visit every node with every possible path of ancestors we could
+	// easily do exponential work because there can be $O(2^x)$ paths through a DAG with $O(x)$ nodes.
+	// So we should visit each node only a fixed number of times, pruning whenever we see a node
+	// again during the same pass.
+	// In that case examining our path of ancestors must be incorrect, since it would just be which ever
+	// path happened to occur first in visitation order.  So we will omit such a step.
+	
+	// Each child of the node will correspond to a weighing
+	// We cache the distinct weighings for each partition (omitting some weighings which are always
+	// solvable by symmetry of the balance).  Iterate through each of these weighings.
+	Partition2* partition = key.partition;
+	for (auto [weighing, output] : partition->get_children())
+	{
+		
+	}
 	return 0;
 }
 
