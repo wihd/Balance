@@ -198,16 +198,16 @@ inline bool ProblemFindMajority2::is_majority(const Distribution& distribution)
 	return false;
 }
 
-ProblemFindMajority2::StateType ProblemFindMajority2::make_root(Partition2* partition)
+ProblemFindMajority2::StateType ProblemFindMajority2::make_root()
 {
 	// At the root there is one part which might contain any of the allowed number of H coins
-	assert(partition && partition->size() == 1 && partition->coin_count() == coin_count);
+	Partition2* root_partition = Partition2::get_root(coin_count);
 	Distributions result;
 	for (auto i = minimum_count; i <= maximum_count; ++i)
 	{
 		result.push_back({i});
 	}
-	return {result, partition};
+	return {result, root_partition};
 }
 
 // Confirm that a weighing that does not refine the input partition is stable with respect to part order

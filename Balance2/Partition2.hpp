@@ -42,9 +42,6 @@ public:
 		Partition2* output;				// The output partition induced by the weighing
 	};
 	
-	/// An initial partition has n coins, all in a single group
-	Partition2(uint8_t count) : parts(1, count) {}
-	Partition2(std::vector<uint8_t>&& parts) : parts(std::move(parts)) {}
 	auto operator==(const Partition2& other) const { return parts == other.parts; }
 	auto operator<=>(const Partition2& other) const { return parts <=> other.parts; }
 	
@@ -54,6 +51,7 @@ public:
 	uint8_t coin_count() const { return std::reduce(parts.begin(), parts.end()); }
 	const std::vector<Child>& get_children();
 	static Partition2* get_instance(std::vector<uint8_t>&& parts);
+	static Partition2* get_root(uint8_t count) { return get_instance(std::vector<uint8_t>{count}); }
 
 	/// Display a summary of this partition
 	void write(Output2& output, const Weighing2* weighing = nullptr) const;
@@ -68,6 +66,9 @@ private:
 	
 	/// Static store that owns all partition objects we have created
 	static std::set<std::unique_ptr<Partition2>, PointerComparator<Partition2>> cache;
+
+	/// Private constructor - we want to force callers to obtain partitions via get_instance()
+	Partition2(std::vector<uint8_t>&& parts) : parts(std::move(parts)) {}
 };
 
 #endif /* Partition2_hpp */

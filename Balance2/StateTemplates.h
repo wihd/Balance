@@ -76,8 +76,10 @@ concept Problem = requires(P problem,
 	{ state_value } -> ProblemState;
 	
 	// The problem must have a method make_root() that returns a suitable state for the root of the tree
-	// We expect the Manager to supply us with the root partition
-	{ problem.make_root(partition) } -> std::same_as<typename P::StateType>;
+	// Note that this means it is the Problem, not the Manager that determines the initial partition
+	// In fact it would be feasible to solve some problems where the coins were in some initial categories
+	// in which case the problem's root state would already have more than one part.
+	{ problem.make_root() } -> std::same_as<typename P::StateType>;
 
 	// Main method that given a state and a weighing (and its output partition) returns for each outcome
 	// a state that will have same solve depth as the direct response to the weighing
