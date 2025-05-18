@@ -601,7 +601,7 @@ uint8_t PartCompareHelper::operator[](size_t i)
 	// Note that since the first value is the part_size, it will sort by part_size first of all
 	if (i < values.size())
 	{
-		return i;
+		return values[i];
 	}
 	
 	// We expect caller to ask for each value in turn, so we only need compute the next value
@@ -612,11 +612,11 @@ uint8_t PartCompareHelper::operator[](size_t i)
 	size_t counter = 0;
 	for (auto& distribution : distributions)
 	{
-		if (distribution[index] == i + 1)
+		if (distribution[index] == i - 1)
 		{
 			++counter;
 		}
-		else if (distribution[index] > i + 1)
+		else if (distribution[index] >= i)
 		{
 			saw_larger = true;
 		}
@@ -628,7 +628,7 @@ uint8_t PartCompareHelper::operator[](size_t i)
 	// If there were no bigger values then there is no point in looking again
 	if (!saw_larger)
 	{
-		// Push a value based on the index number into the vector
+		// Push a value based on the index number into the vector, but large enough to be unique
 		// This will have two effects
 		// i)  By making number bigger than distributions size() we know that it will disambiguate all parts
 		// ii) We keep part order stable when there is no reason to sort them
@@ -663,7 +663,15 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 	std::iota(sorted_indexes.begin(), sorted_indexes.end(), 0);
 	std::sort(sorted_indexes.begin(), sorted_indexes.end(),
 			  [&helpers](auto a, auto b) -> bool {
-		// Keep fetching values from both indexes until values are different
+		// Bug fix: 2025-05-18: Sometimes this function is invoked with a == b
+		// It seems wrong to me - surely an efficient sort will not compare a value with itself
+		// But when it happens the loop below will never end, so we must eliminate this case
+		if (a == b)
+		{
+			return false;
+		}
+		
+		// Otherwise keep fetching values from both indexes until values are different
 		// Since each sequence of values ends in a value not otherwise used it must find a difference
 		// before it reaches end of sequence, even though different a and b have different lengths
 		size_t i = 0;
