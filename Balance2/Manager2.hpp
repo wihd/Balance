@@ -12,6 +12,7 @@
 #include <vector>
 #include <map>
 #include <cassert>
+#include <algorithm>
 
 // The Manager template class is instantiated with a problem class instance
 // It will track problem states and ask the Problem class instance to compute the outcome of weighings
@@ -23,6 +24,7 @@
 // states that we need to consider.
 #include "StateTemplates.h"
 #include "Partition2.hpp"
+#include "Weighing2.hpp"
 #include "Types2.h"
 
 // Special resolved depth value that means that (so far) we have no estimate of resolved depth of node
@@ -51,8 +53,6 @@ class Manager2
 		
 		// For reporting we would like to know what weighing should be done (using list of weighings for
 		// the parent partition) to get to these states.  At solve time however this information is not needed.
-		// We could reduce memory footprint by excluding this number and then finding it again on
-		// the solution tree.
 		int weighing_number;
 	};
 
@@ -96,6 +96,7 @@ class Manager2
 	};
 	
 	using StatesType = std::map<Key, Status, PointerComparator<typename P::StateType>>;
+	using StatesIterator = StatesType::iterator;
 	
 	// Iterator class used to record a position in the tree of nodes
 	class Iterator
@@ -117,7 +118,7 @@ class Manager2
 		void advance_prune();
 
 	private:
-		std::vector<typename StatesType::iterator> path;
+		std::vector<StatesIterator> path;
 		std::vector<size_t> child_numbers;
 		std::vector<Outcome> outcomes;
 		StatesType& states;
@@ -134,7 +135,7 @@ public:
 private:
 	P problem;						// This class contains the problem specific logic
 	StatesType states;
-	StatesType::iterator root;
+	StatesIterator root;
 	
 	// Helper methods
 	size_t expand(const Iterator& node);
@@ -309,27 +310,189 @@ size_t Manager2<P>::expand(const Iterator& node)
 	{
 		return 0;
 	}
+
+	// We do not attempt to consider whether or not to expand this node based on path taken to reach it
+	// This makes no sense.  There could be an exponential number of paths to the same node (and in fact
+	// cycles are not impossible).  So instead we will expand the node regardless of path taken.
 	
-	// The purpose of expanding a node is to potentially tighten the resolved depth of this node
-	// or one of its ancestors.  If that cannot happen then we should not expand this node.
-	// TODO: Work out implications of this
-	// We are concerned that if we visit every node with every possible path of ancestors we could
-	// easily do exponential work because there can be $O(2^x)$ paths through a DAG with $O(x)$ nodes.
-	// So we should visit each node only a fixed number of times, pruning whenever we see a node
-	// again during the same pass.
-	// In that case examining our path of ancestors must be incorrect, since it would just be which ever
-	// path happened to occur first in visitation order.  So we will omit such a step.
+	// If one weighing leads to same outcomes as another then there is no point in tracking both of them
+	// We will store locally a set of the outcomes we have seen to detect duplicates.
+	// We are not sure how many duplicates will occur
+	std::set<OutcomeArray<typename P::StateType*>> seen_combinations;
+	
+	// We want to compute an improved min-depth for this node
+	// The minimum depth for a node is one more than the minimum value of all of the min depths of children
+	// except that if a child's min-depth == max-depth then we treat its minimum depth as infinity.
+	uint8_t worst_child_min_depth = DEPTH_INFINITY;
 	
 	// Each child of the node will correspond to a weighing
 	// We cache the distinct weighings for each partition (omitting some weighings which are always
 	// solvable by symmetry of the balance).  Iterate through each of these weighings.
 	Partition2* partition = key.partition;
+	int weighing_number = -1;
 	for (auto [weighing, output_partition] : partition->get_children())
 	{
 		// Ask the problem to determine the output state (for each outcome) when applying this weighing to our state
+		++weighing_number;
 		auto outcomes = problem.apply_weighing(key, weighing, output_partition);
+
+		// It is permitted to omit a weighing if we can conclude that following the weighing will not help.
+		// We expect the problem to omit an outcome if it is 'impossible' meaning that based on the input
+		// state it can conclude that the outcome never occurs.
+		int impossible_count = 0;
+		for (auto& outcome : outcomes)
+		{
+			if (!outcome)
+			{
+				++impossible_count;
+			}
+		}
+
+		// If the weighing has two impossible outcomes then it follows that the weighing provides no more
+		// information.  In that case we will omit it from the list of weighings to explore.
+		// Note that it is logically inconsistent for all three outcomes to be impossible
+		// But we permit this case to allow for a slight optimization.  If the problem finds two impossible
+		// outcomes then its pointless for it to compute the third since we already know manager will ignore it.
+		// A weighing with one impossible outcome is perfectly valid.
+		if (impossible_count >= 2)
+		{
+			continue;
+		}
+		
+		// If the weighing is symmetric then then the left and right outcomes will always be equally
+		// hard to solve (by symmetry).  So in that case we will discard one of them now.
+		if (weighing->is_symmetric(*output_partition))
+		{
+			// TODO: It is unfortunate that we are making manager allocate object here that it knew we would delete
+			// Note that a symmetric weighing with left & right outcomes permitted, but balanced impossible
+			// is perfectly useful.  We omitted right outcome because it is redundant to explore it
+			// not because it is impossible.
+			outcomes[Outcome::RightHeavier].reset();
+		}
+		
+		// We will now look-up standard instances for all remaining outcomes so pointer compare will work
+		// This will never result in unused entries in states since we only omit outcomes if they are duplicates
+		OutcomeArray<typename P::StateType*> child_keys;
+		uint8_t deepest_outcome = 0;
+		for (int i = Outcome::Begin; i != Outcome::End; ++i)
+		{
+			if (outcomes[i])
+			{
+				// Get a node for this outcome as a key, emplacing a new one if there is no existing one
+				// C++17 Note: This method will not allocate new pair if map already contains an object
+				auto insert_result = states.try_emplace(std::move(outcomes[i]), Status{});
+				auto& child_status = insert_result.first->second;
+				if (insert_result.second)
+				{
+					// We have never seen this state before - determine if the problem is solved for it
+					if (problem.is_solved(*insert_result.first->first.get()))
+					{
+						// Record that we have a solved state
+						// If we need to agressively save memory we observer we don't need multiple solved states
+						child_status.depth_max = 0;
+						
+						// No change to worst_child_min_depth since this node is solved
+					}
+					else
+					{
+						// We have no information about depth of this outcome except it is not 0
+						// Since worst_child_min_depth can never be zero it must go to 1
+						deepest_outcome = DEPTH_INFINITY;
+						worst_child_min_depth = child_status.depth_min = 1;
+					}
+				}
+				else
+				{
+					// Since this is an existing state we already have some information on its resolved depth
+					deepest_outcome = std::max(deepest_outcome, child_status.depth_max);
+					if (child_status.depth_min < child_status.depth_max)
+					{
+						worst_child_min_depth = std::min(worst_child_min_depth, child_status.depth_min);
+					}
+				}
+
+				// Record the child node (as a raw pointer key value - its owned by `states`)
+				child_keys[i] = insert_result.first->first.get();
+			}
+		}
+		
+		// If all three outcomes of this weighing are solved (or were omitted entirely because impossible/duplicate)
+		// then this weighing leads to a solution in one step regardless of its outcome.
+		// Since this node is not solved (otherwise we would have said it was already expanded) we have found
+		// the best possible course of action from this node.
+		if (deepest_outcome == 0)
+		{
+			// We now know this node's resolved depth
+			status.depth_min = status.depth_max = 1;
+			
+			// There is no point in continuing to expand this node's children since we cannot find a better weighing
+			// Similarly there is no point in recording any of the other weighings we examined
+			status.children = std::vector<Child>{Child{child_keys, weighing_number}};
+			return 1;
+		}
+
+		// It is possible that several outcomes lead to equivalent states
+		// When that happens we have a minor optimization to only track one of them
+		if (child_keys[0] == child_keys[1])
+		{
+			child_keys[1] = nullptr;
+			if (child_keys[0] == child_keys[2])
+			{
+				child_keys[2] = nullptr;
+			}
+		}
+		else if (child_keys[0] == child_keys[2])
+		{
+			child_keys[2] = nullptr;
+		}
+		else if (child_keys[1] == child_keys[2])
+		{
+			child_keys[2] = nullptr;
+		}
+
+		// It is possible that multiple weighings lead to same set of outcome states in which case we skip them
+		// Note that having one repeated outcome is not sufficient - we need to be able to say that the
+		// weighings are equivalent, not that the weighings have an equivalent outcome
+		OutcomeArray<typename P::StateType*> probe = child_keys;
+		std::sort(probe.begin(), probe.end());
+		if (!seen_combinations.insert(probe).second)
+		{
+			// This is a fresh combination so we will create a child for it
+			status.children.emplace_back(child_keys, weighing_number);
+			
+			// Even if the new child was not solved, it is possible (but unlikely) that it does let us improve the depth
+			// NB: We already checked deepest_outcome != 0, so it is safe to subtract one from it without underflow
+			if (deepest_outcome < DEPTH_INFINITY && status.depth_max > deepest_outcome - 1)
+			{
+				status.depth_max = deepest_outcome - 1;
+			}
+		}
 	}
-	return 0;
+	
+	// Our resolved depth must be at least 2 because if it were 0 then this node would be solved, and if it were 1
+	// then this node would have had a child that was solved for all outcomes and we did not find such a child.
+	// Its just possible (if all our child states were either already partially resolved or were fresh solved states)
+	// that we can record that resolved depth is bigger than 2 but its unlikely.
+	if (worst_child_min_depth == DEPTH_INFINITY)
+	{
+		// This means that for every child was fully resolved - it had a finite max_depth and we knew that
+		// it was not possible to do better.  In that case this node is also now fully resolved.
+		// We set the depth_max for this node as we went along, so we can set min_depth for it as well
+		assert(status.depth_max != DEPTH_INFINITY);
+		status.depth_min = status.depth_max;
+	}
+	else
+	{
+		// We found at least one child whose resolved depth is unknown.
+		// It remains possible that exploring that child would improve on our current max_depth
+		// All we can say now is that our depth lower bound is at least one larger than that of the child
+		// If we actually found a (necessarily different) child that gave us a shorter path to a solution
+		// then our min depth is that value
+		status.depth_min = std::min(static_cast<uint8_t>(worst_child_min_depth + 1), status.depth_max);
+	}
+
+	// Return the number of children that we created
+	return status.children.size();
 }
 
 #endif /* Manager2_h */
