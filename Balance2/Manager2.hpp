@@ -114,6 +114,7 @@ class Manager2
 		// Modifiers
 		bool advance_first_child();
 		bool advance_parent();
+		bool advance_outcome();
 		bool advance_sibling();
 		void advance_prune();
 
@@ -130,7 +131,7 @@ public:
 	template <typename... Args>
 	Manager2(Args&&... args) : problem(std::forward<Args>(args)...), root(states.end()) {}
 	void clear();
-	int solve_breadth(uint8_t stop_depth);
+	size_t solve_breadth(uint8_t stop_depth);
 
 private:
 	P problem;						// This class contains the problem specific logic
@@ -139,6 +140,7 @@ private:
 	
 	// Helper methods
 	size_t expand(const Iterator& node);
+	size_t improve_node(Iterator& node, uint8_t target_depth);
 };
 
 
@@ -148,7 +150,7 @@ private:
 template <Problem P>
 bool Manager2<P>::Iterator::advance_first_child()
 {
-	// Attempt to modify iterator by moving to its first expanded child
+	// Attempt to modify iterator by moving to its first child
 	// Return true if made change
 	// return false if no children (and guarantee that iterator is not changed)
 	auto& children = value().children;
@@ -200,13 +202,12 @@ bool Manager2<P>::Iterator::advance_parent()
 }
 
 template <Problem P>
-bool Manager2<P>::Iterator::advance_sibling()
+bool Manager2<P>::Iterator::advance_outcome()
 {
-	// Attempt to modify iterator by moving to a sibling node - that is the next existing node after the current
-	// node within its parent.  This method does NOT attempt to move to a cousin node
-	// Nodes that were never constructed are presumed to not exist - the advance methods will not move to them.
+	// Attempt to modify iterator by moving to a sibling node which is a different outcome of the SAME weighing
+	// node within its parent.  This method does NOT attempt to move to a cousin node or to another weighing
 	// Return true if made change
-	// return false if the node has no further sibling (iterator is not changed)
+	// return false if the node has no further outcome (iterator is not changed)
 	
 	// The root node has no siblings
 	if (is_root())
@@ -224,7 +225,7 @@ bool Manager2<P>::Iterator::advance_sibling()
 	{
 		if (child.keys[outcome])
 		{
-			// We have another child of the same weighing
+			// We have another outcome child of the same weighing
 			path.back() = states.find(child.keys[outcome]);
 			assert(path.back() != states.end());
 			// child_numbers was not changed
@@ -233,6 +234,34 @@ bool Manager2<P>::Iterator::advance_sibling()
 		}
 	}
 
+	// There were no more outcomes, so we cannot make the desired advance
+	return false;
+}
+
+template <Problem P>
+bool Manager2<P>::Iterator::advance_sibling()
+{
+	// Attempt to modify iterator by moving to a sibling node - that is the next existing node after the current
+	// node within its parent.  This method does NOT attempt to move to a cousin node
+	// Return true if made change
+	// return false if the node has no further sibling (iterator is not changed)
+	
+	// If we can advance to another outcome of our current weighing then we are done
+	if (advance_outcome())
+	{
+		return true;
+	}
+	
+	// The root node has no siblings
+	if (is_root())
+	{
+		return false;
+	}
+	
+	// If we are not the root we must be able to examine the children of our parent node
+	auto& children = path[path.size() - 2]->second.children;
+	auto child_number = child_numbers.back();
+	
 	// If our parent node has no more weighings then it cannot have any more children
 	if (++child_number == children.size())
 	{
@@ -287,13 +316,104 @@ void Manager2<P>::clear()
 }
 
 template<Problem P>
-int Manager2<P>::solve_breadth(uint8_t stop_depth)
+size_t Manager2<P>::solve_breadth(uint8_t stop_depth)
 {
 	// Start by clearing the graph, but expand the root node
 	// When we return the root node we will know that we have completed the iteration
 	clear();
-	expand(Iterator(*this));
-	return 0;
+	Iterator root_iterator(*this);
+	size_t node_counter = expand(root_iterator) + 1;
+
+	// We perform iterations from the root, each of which must increase its depth_min by one
+	// We stop when we have found a minimal solution to the problem
+	auto& root_status = root_iterator.value();
+	while (!root_status.is_resolved() && root_status.depth_min < stop_depth)
+	{
+		node_counter += improve_node(root_iterator, root_status.depth_min + 1);
+	}
+	return node_counter;
+}
+
+template <Problem P>
+size_t Manager2<P>::improve_node(Iterator& node, uint8_t target_depth)
+{
+	// Ensure that the input node is either resolved, or its depth_min is not smaller than the target
+	// We may expand the node and visit its children
+	// The iterator may change within this method, but it should always have same value on exit as it did no entry
+	
+	// Ensure that input node is expanded (method does nothing if node is solved, or if it was already expanded)
+	size_t node_counter = expand(node);
+	
+	// We will exit immediately if the goal is already met
+	auto& status = node.value();
+	if (status.is_resolved() || status.depth_min >= target_depth)
+	{
+		return node_counter;
+	}
+	
+
+	// The current status of our child nodes does not permit us to meet the goal for this node
+	// We must have child nodes (since a solved node always meets the goal)
+	// So we will improve each child node
+	assert(!status.children.empty());
+	assert(target_depth > 0);
+	node.advance_first_child();
+	uint8_t worst_depth_min = DEPTH_INFINITY;
+	do {
+		// Group together the children that come from the same weighing
+		uint8_t worst_depth_max = 0;
+		do {
+			// Improve the child node, but use a smaller target depth
+			// This process must stop because expanding a node will either resolve it or set its depth_min to 2 or better
+			// We are using recursion as against iteration.  The depth of the recursion is at most the number of weighings
+			// in the solution, which will be a small integer so we should not risk stack overflow.
+			node_counter += improve_node(node, target_depth - 1);
+
+			// The depth_max of the weighing is the worst depth_max of its three outcomes
+			worst_depth_max = std::max(worst_depth_max, node.value().depth_max);
+			
+			// Unless the child is resolved it might also worsen (i.e. reduce) the min depth
+			if (!node.value().is_resolved())
+			{
+				worst_depth_min = std::min(worst_depth_min, node.value().depth_min);
+			}
+		} while (node.advance_outcome());
+
+		// Our depth_min can only be improved when we have considered every weighing
+		// But our depth_max can be improved as we go along
+		if (worst_depth_max != DEPTH_INFINITY && worst_depth_max + 1 < status.depth_max)
+		{
+			status.depth_max = worst_depth_max + 1;
+			assert(status.depth_min <= status.depth_max);
+
+			// Since we just improved our depth_max it is possible that our node is now resolved
+			if (status.is_resolved())
+			{
+				// We have made the required improvement, so we can exit now without looking at other children
+				// TODO: Ideally problem would let us sort children to increase likelyhood of exiting here
+				node.advance_parent();
+				return node_counter;
+			}
+		}
+	} while (node.advance_sibling());
+	
+	// We have considered every child, so now we can increase our depth_min
+	// I think it is extremely implausible that we have a new value that is better than our target
+	if (worst_depth_min == DEPTH_INFINITY)
+	{
+		// Every single child was resolved, so this node should be resolved as well
+		assert(status.depth_max != DEPTH_INFINITY);
+		status.depth_min = status.depth_max;
+	}
+	else
+	{
+		// We encountered at least one child that was not resolved, so we have a new estimate for depth_min
+		// It is possible that some other child reduced the depth_max to sufficiently that we are now resolved
+		status.depth_min = std::min(static_cast<uint8_t>(worst_depth_min + 1), status.depth_min);
+	}
+	assert(status.depth_min <= status.depth_max);
+	assert(status.depth_min >= target_depth);
+	return node_counter;
 }
 
 template <Problem P>
@@ -491,7 +611,7 @@ size_t Manager2<P>::expand(const Iterator& node)
 		status.depth_min = std::min(static_cast<uint8_t>(worst_child_min_depth + 1), status.depth_max);
 	}
 
-	// Return the number of children that we created
+	// Return the number of children that we created (its not same as number of nodes)
 	return status.children.size();
 }
 
