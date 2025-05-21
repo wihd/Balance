@@ -49,11 +49,11 @@ class Manager2
 		// For each of the three outcomes, record the resulting state
 		// We will use nullptr if an outcome leads to an impossible state
 		// The state object will be owned as a key of the manager's states map.
-		OutcomeArray<typename P::StateType*> keys;
+		OutcomeArray<typename P::StateType*> keys{nullptr, nullptr, nullptr};
 		
 		// For reporting we would like to know what weighing should be done (using list of weighings for
 		// the parent partition) to get to these states.  At solve time however this information is not needed.
-		int weighing_number;
+		int weighing_number = -1;
 	};
 
 	// The manager uses an instance of this structure to track the processing, if any, it has done
@@ -396,6 +396,7 @@ size_t Manager2<P>::improve_node(Iterator& node, uint8_t target_depth)
 			}
 		}
 	} while (node.advance_sibling());
+	node.advance_parent();
 	
 	// We have considered every child, so now we can increase our depth_min
 	// I think it is extremely implausible that we have a new value that is better than our target
@@ -492,7 +493,7 @@ size_t Manager2<P>::expand(const Iterator& node)
 		
 		// We will now look-up standard instances for all remaining outcomes so pointer compare will work
 		// This will never result in unused entries in states since we only omit outcomes if they are duplicates
-		OutcomeArray<typename P::StateType*> child_keys;
+		OutcomeArray<typename P::StateType*> child_keys{nullptr, nullptr, nullptr};
 		uint8_t deepest_outcome = 0;
 		for (int i = Outcome::Begin; i != Outcome::End; ++i)
 		{
@@ -575,7 +576,7 @@ size_t Manager2<P>::expand(const Iterator& node)
 		// weighings are equivalent, not that the weighings have an equivalent outcome
 		OutcomeArray<typename P::StateType*> probe = child_keys;
 		std::sort(probe.begin(), probe.end());
-		if (!seen_combinations.insert(probe).second)
+		if (seen_combinations.insert(probe).second)
 		{
 			// This is a fresh combination so we will create a child for it
 			status.children.emplace_back(child_keys, weighing_number);
