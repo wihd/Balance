@@ -638,6 +638,33 @@ uint8_t PartCompareHelper::operator[](size_t i)
 	return counter;
 }
 
+// We will use a functor object to allow us to reduce a vector with a constant
+// Hmm, I'm not convinced here that this is simpler than just explicitly summing the value!
+// Once we have this operator we can use it easily, but writing the operator requires multiple cases
+struct SumBinaryOp
+{
+	size_t operator()(size_t a, const ProblemFindMajority2::Distribution& b) const
+	{
+		return std::reduce(b.begin(), b.end(), a);
+	}
+	/*
+	 https://en.cppreference.com/w/cpp/algorithm/reduce tells us that we must define all four combinations
+	 of combining the output type (size_t) with data tyoe (const Distribution&).
+	 However we found it compiles with just the one.  I suspect that if we were using a parallel execution
+	 policy (which makes no sense in our program) then it might need other cases.  But we don't need them.
+	 
+	size_t operator()(const ProblemFindMajority2::Distribution& a, const ProblemFindMajority2::Distribution& b) const
+	{
+		return std::reduce(b.begin(), b.end(), std::reduce(a.begin(), a.end()));
+	}
+	size_t operator()(const ProblemFindMajority2::Distribution& a, size_t b) const
+	{
+		return std::reduce(a.begin(), a.end(), b);
+	}
+	size_t operator()(size_t a, size_t b) const { return a + b; }
+	 */
+};
+
 ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distributions&& distributions,
 																		Partition2* partition)
 {
@@ -646,7 +673,28 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 	// But we observe that many states are isomorphic in the sense that if we reordered the parts
 	// then we would obtain the same state.  We will attempt to put the state into a canonical form
 	
-	// First we sort the parts
+	// We observe that our problem is completely symmetric with regard to L and H coins
+	// So we can swap L and H without changing the difficulty of solving the problem
+	// If one coin occurs more than the other in the distributions we can exchange the coin types to
+	// ensure that H is in the majority.
+	size_t h_count = std::reduce(distributions.begin(), distributions.end(), 0, SumBinaryOp());
+	size_t l_count = distributions.size() * coin_count - h_count;
+	if (l_count > h_count)
+	{
+		// Since we own the distributions we will modify them in place
+		for (auto i = 0; i != partition->size(); ++i)
+		{
+			auto part_size = (*partition)[i];
+			for (auto& d : distributions)
+			{
+				d[i] = part_size - d[i];
+			}
+		}
+	}
+	
+	// TODO: Can we identify an invarient that would allow us to sometimes swap L and H when thier counts are equal?
+	
+	// Next we sort the parts
 	// If two parts have different sizes then their relative order is fixed by partition
 	// But if two parts have the same size then switching them around has no effect on solving the problem
 	// So we will sort them into ascending order by the histogram of the H counts in distributions
