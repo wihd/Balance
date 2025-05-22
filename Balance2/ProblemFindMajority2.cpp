@@ -856,8 +856,9 @@ void ProblemFindMajority2::write_ambiguous_state(Output2& output, const StateTyp
 		}
 	}
 	
-	// We always display it with multiple lines
+	// We always display it with multiple lines, putting partition on its own line
 	// We don't provide an outcome name - the assumption is that we will also report information about children
+	state.partition->write(output);
 	output.println("State:     Ambiguous: Heavy Majority: {};  Light Majority: {}  {{",
 				   count_majority, count_minority);
 	output.indent();

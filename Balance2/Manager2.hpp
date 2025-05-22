@@ -26,6 +26,7 @@
 #include "Partition2.hpp"
 #include "Weighing2.hpp"
 #include "Types2.h"
+#include "Output2.hpp"
 
 // Special resolved depth value that means that (so far) we have no estimate of resolved depth of node
 constexpr uint8_t DEPTH_INFINITY = 255;
@@ -93,6 +94,9 @@ class Manager2
 		// On expanding a node either we will give the node children, or we will set depth to 0
 		// Only way a node can have a depth that isn't infinity is if it has been expanded - very minor optimisation!
 		bool is_expanded() const { return depth_max != DEPTH_INFINITY || !children.empty(); }
+		
+		// Output the depth numbers as a single line on output
+		void write_resolution(Output2& output) const;
 	};
 	
 	using StatesType = std::map<Key, Status, PointerComparator<typename P::StateType>>;
@@ -132,6 +136,7 @@ public:
 	Manager2(Args&&... args) : problem(std::forward<Args>(args)...), root(states.end()) {}
 	void clear();
 	size_t solve_breadth(uint8_t stop_depth);
+	void write(Output2& output);
 
 private:
 	P problem;						// This class contains the problem specific logic
@@ -142,6 +147,31 @@ private:
 	size_t expand(const Iterator& node);
 	size_t improve_node(Iterator& node, uint8_t target_depth);
 };
+
+
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// class Manager2<P>::Status
+
+template <Problem P>
+void Manager2<P>::Status::write_resolution(Output2& output) const
+{
+	if (depth_max == 0)
+	{
+		output << "Status:    Problem solved here";
+	}
+	else if (is_resolved())
+	{
+		output.println("Status:    Optimal solution at depth {}", depth_max);
+	}
+	else if (depth_max < DEPTH_INFINITY)
+	{
+		output.println("Status:    Found solution at depth {}, but only explored to depth {}", depth_max, depth_min);
+	}
+	else
+	{
+		output.println("Status:    Explored to depth {} but no solution found", depth_min);
+	}
+}
 
 
 // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -615,5 +645,24 @@ size_t Manager2<P>::expand(const Iterator& node)
 	// Return the number of children that we created (its not same as number of nodes)
 	return status.children.size();
 }
+
+template <Problem P>
+void Manager2<P>::write(Output2& output)
+{
+	output << "Manager: {";
+	output.indent();
+	problem.write_description(output);
+	root->second.write_resolution(output);
+	
+	// Describe the state of the root node
+	Iterator node(*this);
+	problem.write_ambiguous_state(output, node.key());
+	
+	// End the Manager object
+	output.outdent();
+	output << "}";
+}
+
+
 
 #endif /* Manager2_h */

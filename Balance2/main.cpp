@@ -17,6 +17,7 @@
 #include <print>
 #include "Manager2.hpp"
 #include "ProblemFindMajority2.hpp"
+#include "Output2.hpp"
 
 constexpr uint8_t coint_count = 3;
 
@@ -25,5 +26,10 @@ int main(int argc, const char * argv[]) {
 	Manager2<ProblemFindMajority2> manager(coint_count);
 	std::println("Coin count = {}", coint_count);
 	manager.solve_breadth(coint_count);
+
+	// Output our state
+	Output2 output;
+	output.set_only_happy_path(true);
+	manager.write(output);
 	return 0;
 }
