@@ -451,7 +451,7 @@ size_t Manager2<P>::improve_node(Iterator& node, uint8_t target_depth)
 	{
 		// We encountered at least one child that was not resolved, so we have a new estimate for depth_min
 		// It is possible that some other child reduced the depth_max to sufficiently that we are now resolved
-		status.depth_min = std::min(static_cast<uint8_t>(worst_depth_min + 1), status.depth_min);
+		status.depth_min = std::min(static_cast<uint8_t>(worst_depth_min + 1), status.depth_max);
 	}
 	assert(status.depth_min <= status.depth_max);
 	assert(status.depth_min >= target_depth);
