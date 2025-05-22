@@ -112,7 +112,25 @@ void Weighing2::write(Output2& output, const Partition2& output_partition) const
 Weighing2* Weighing2::get_instance(std::vector<Part>&& provenances, const Partition2& output)
 {
 	// Get the cached instance of a weighing with the given provenances, creating it if necessary
+	// hurwood, 2025-05-22: Bug fix
+	// Since the Weighing2 object does not include partition sizes it is possible that one provances
+	// vector can yield different values of is_symmetric (because it has a different output partition)
+	// As a result the value of is_symmetric is included in comparator (that was already correct)
+	// and so we must set it on the probe.  (Previously we waited to see if we had a hit first).
 	Weighing2 probe(std::move(provenances), false);
+
+	// The weighing is symmetric if pan_contents(..., Left) == pan_contents(..., Right)
+	// This means that swapping left and right pan would not change the selection
+	// Since the output parts are listed in order of ascending part size it is not easy to
+	// determine if this is true.  We will compute it now and modify the probe if necessary
+	auto left_parts = probe.pan_contents(output, Placement::LeftPan);
+	auto right_parts = probe.pan_contents(output, Placement::RightPan);
+	if (left_parts == right_parts)
+	{
+		probe.set_symmetric(true);
+	}
+
+	// Now probe is finalised, we can see if we already have a copy of it
 	auto iterator = cache.find(&probe);
 	if (iterator != cache.end())
 	{
@@ -121,21 +139,7 @@ Weighing2* Weighing2::get_instance(std::vector<Part>&& provenances, const Partit
 	}
 	else
 	{
-		// The weighing is symmetric if pan_contents(..., Left) == pan_contents(..., Right)
-		// This means that swapping left and right pan would not change the selection
-		// Since the output parts are listed in order of ascending part size it is not easy to
-		// determine if this is true.  We will compute it now and modify the probe if necessary
-		auto left_parts = probe.pan_contents(output, Placement::LeftPan);
-		auto right_parts = probe.pan_contents(output, Placement::RightPan);
-
-		// Create and return a cached instance of the partition
-		auto instance = std::make_unique<Weighing2>(std::move(probe));
-		auto result = instance.get();
-		if (left_parts == right_parts)
-		{
-			result->set_symmetric(true);
-		}
-		cache.insert(std::move(instance));
-		return result;
+		// Create and return a cached unique instance of this weighing
+		return cache.insert(std::make_unique<Weighing2>(std::move(probe))).first->get();
 	}
 }
