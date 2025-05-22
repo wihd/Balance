@@ -116,9 +116,12 @@ class Manager2
 		typename P::StateType& key() const { return *path.back()->first.get(); }
 		typename P::StateType* key_ptr() const { return path.back()->first.get(); }
 		Status& value() const { return path.back()->second; }
+		size_t child_number() const { return child_numbers.back(); }
+		decltype(auto) parents_children() const { return path[path.size() - 2]->second.children; }
+		int weighing_number() const { return parents_children()[child_number()].weighing_number; }
 		Outcome outcome() const { return outcomes.back(); }
 		Partition2* input_partition() const { return path[path.size() - 2]->first.get()->partition; }
-		decltype(auto) weighing() const { return input_partition()->get_children()[child_numbers.back()]; }
+		decltype(auto) weighing() const { return input_partition()->get_children()[weighing_number()]; }
 		Partition2* output_partition() const { return weighing().output; }
 
 		// Modifiers
@@ -129,10 +132,10 @@ class Manager2
 		void advance_prune();
 
 	private:
-		std::vector<StatesIterator> path;
-		std::vector<size_t> child_numbers;
-		std::vector<Outcome> outcomes;
-		StatesType& states;
+		std::vector<StatesIterator> path;		// Iterators to all nodes on the path, always includes root
+		std::vector<size_t> child_numbers;		// For non-root nodes; index number in parent of this child
+		std::vector<Outcome> outcomes;			// For non-root nodes; outcome taken from parent's child
+		StatesType& states;						// Reference to states belonging to our Manager
 	};
 	friend class Iterator;
 	
@@ -176,11 +179,11 @@ std::string Manager2<P>::Status::format_resolution() const
 	}
 	else if (depth_max < DEPTH_INFINITY)
 	{
-		return std::format("Status:    Solution at depth {}; explored to depth {}", depth_max, depth_min);
+		return std::format("Solution at depth {}; explored to depth {}", depth_max, depth_min);
 	}
 	else
 	{
-		return std::format("Status:    No solution; explored to depth {}", depth_min);
+		return std::format("No solution; explored to depth {}", depth_min);
 	}
 }
 
@@ -706,7 +709,7 @@ void Manager2<P>::write_weighing(Output2& output, Iterator& node)
 	// On exit the iterator will point to a node reachable from entry node via advance_outcome()
 	// and which cannot advance its outcome any more
 	auto& weighing = node.weighing();
-	output << "{";
+	output.println("{{ // child_index={:<6} weighing_number={}", node.child_number(), node.weighing_number());
 	output.indent();
 	weighing.weighing->write(output, *weighing.output);
 	weighing.output->write(output);
