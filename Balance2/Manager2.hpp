@@ -608,22 +608,25 @@ void Manager2<P>::expand(const Iterator& node)
 
 		// It is possible that several outcomes lead to equivalent states
 		// When that happens we have a minor optimization to only track one of them
-		if (child_keys[0] == child_keys[1])
-		{
-			child_keys[1] = nullptr;
-			if (child_keys[0] == child_keys[2])
-			{
-				child_keys[2] = nullptr;
-			}
-		}
-		else if (child_keys[0] == child_keys[2])
-		{
-			child_keys[2] = nullptr;
-		}
-		else if (child_keys[1] == child_keys[2])
-		{
-			child_keys[2] = nullptr;
-		}
+		// We took this optimization away since it has no effect on memory footprint and
+		// the effect on time is negligable since on visiting second node we always find it to be the
+		// already resolved.  But keeping it makes output easier to understand.
+//		if (child_keys[0] == child_keys[1])
+//		{
+//			child_keys[1] = nullptr;
+//			if (child_keys[0] == child_keys[2])
+//			{
+//				child_keys[2] = nullptr;
+//			}
+//		}
+//		else if (child_keys[0] == child_keys[2])
+//		{
+//			child_keys[2] = nullptr;
+//		}
+//		else if (child_keys[1] == child_keys[2])
+//		{
+//			child_keys[2] = nullptr;
+//		}
 
 		// It is possible that multiple weighings lead to same set of outcome states in which case we skip them
 		// Note that having one repeated outcome is not sufficient - we need to be able to say that the
