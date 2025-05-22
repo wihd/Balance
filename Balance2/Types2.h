@@ -35,7 +35,9 @@ typedef enum : int {
 template <class D>
 using OutcomeArray = std::array<D, Outcome::Count>;
 
+// Fix some strings for outputs
 constexpr OutcomeArray<const char*> placement_names { "Left", "Right", "Aside" };
+constexpr OutcomeArray<const char*> outcome_names{ "Left:     ", "Right:    ", "Balanced: " };
 
 /** Transparaent comparator class that allows mixing unique and raw pointers */
 template <class T>

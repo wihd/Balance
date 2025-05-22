@@ -113,7 +113,11 @@ class Manager2
 		bool is_root() const { return path.size() == 1; }
 		size_t depth() const { return child_numbers.size(); }
 		typename P::StateType& key() const { return *path.back()->first.get(); }
+		typename P::StateType* key_ptr() const { return path.back()->first.get(); }
 		Status& value() const { return path.back()->second; }
+		Outcome outcome() const { return outcomes.back(); }
+		Partition2* input_partition() const { return path[path.size() - 2]->first.get()->partition; }
+		decltype(auto) weighing() const { return input_partition()->get_children()[child_numbers.back()]; }
 
 		// Modifiers
 		bool advance_first_child();
@@ -129,6 +133,8 @@ class Manager2
 		StatesType& states;
 	};
 	friend class Iterator;
+	
+	using NodeIdMap = std::map<typename P::StateType*, int>;
 
 public:
 	// Forward all of the parameters from the constructor to the unknown problem object
@@ -142,10 +148,13 @@ private:
 	P problem;						// This class contains the problem specific logic
 	StatesType states;
 	StatesIterator root;
+	NodeIdMap node_ids;				// On writing, store map assigning ids to nodes
 	
 	// Helper methods
 	size_t expand(const Iterator& node);
 	size_t improve_node(Iterator& node, uint8_t target_depth);
+	void write_weighing(Output2& output, Iterator& node);
+	void write_node(Output2& output, Iterator& node);
 };
 
 
@@ -658,11 +667,84 @@ void Manager2<P>::write(Output2& output)
 	Iterator node(*this);
 	problem.write_ambiguous_state(output, node.key());
 	
+	// Our 'tree' is really a graph but we do not want to list each node more than once
+	// So we will assign numbers to nodes as we visit them
+	// If we visit a node already in map we will just output its number and prune it
+	node_ids = NodeIdMap{{root->first.get(), 0}};
+
+	// Iterate over all our children
+	if (node.advance_first_child())
+	{
+		output << "Children:  [";
+		output.indent();
+		do {
+			write_weighing(output, node);
+		} while (node.advance_sibling());
+
+		// Close the Children scope
+		output.outdent();
+		output << "]";
+	}
+	else
+	{
+		output << "Children:  <Root has not been expanded>";
+	}
+	
 	// End the Manager object
 	output.outdent();
 	output << "}";
 }
 
+template <Problem P>
+void Manager2<P>::write_weighing(Output2& output, Iterator& node)
+{
+	// On entry the iterator will point to a non-root node (it should be first node with current weighing)
+	// We output a description of the node's weighing, and then visit each recorded outcome of the node
+	// On exit the iterator will point to a node reachable from entry node via advance_outcome()
+	// and which cannot advance its outcome any more
+	auto& weighing = node.weighing();
+	output << "{";
+	output.indent();
+	weighing.weighing->write(output, *weighing.output);
+	
+	// Iterate over each of the childen
+	do {
+		write_node(output, node);
+	} while (node.advance_outcome());
+	
+	// End the weighing grouping
+	output.outdent();
+	output << "}";
+}
 
+template <Problem P>
+void Manager2<P>::write_node(Output2& output, Iterator& node)
+{
+	// Output a description of the current node, starting with its outcome within its weighing
+	
+	// If we have visited the node before we just output one line and do not attempt to visit more children
+	if (node_ids.find(node.key_ptr()) != node_ids.end())
+	{
+		output.println("{} Revisited #{:<8} depth={:<4}",
+					   outcome_names[node.outcome()],
+					   node_ids[node.key_ptr()],
+					   node.depth());
+		return;
+	}
+	
+	// Otherwise this is first visit to this node
+	int node_id = static_cast<int>(node_ids.size());
+	node_ids[node.key_ptr()] = node_id;
+	output.println("{} Node #{:<8} depth={:<4} {{",
+				   outcome_names[node.outcome()],
+				   node_id,
+				   node.depth());
+	output.indent();
+	node.value().write_resolution(output);
+	
+	// End the description of this node
+	output.outdent();
+	output.println("}} // Node: {}", node_id);
+}
 
 #endif /* Manager2_h */
