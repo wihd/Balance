@@ -109,6 +109,16 @@ class Manager2
 	public:
 		// Constructor starts with iterator at root of tree
 		Iterator(Manager2<P>& manager) : states(manager.states), path{manager.root} {}
+		
+		// Tell compiler on assignment we will just assume that the states parameter is untouched
+		Iterator& operator=(const Iterator& other)
+		{
+			path = other.path;
+			child_numbers = other.child_numbers;
+			outcomes = other.outcomes;
+			assert(&states == &other.states);
+			return *this;
+		}
 
 		// Accessors
 		bool is_root() const { return path.size() == 1; }
@@ -146,7 +156,7 @@ public:
 	template <typename... Args>
 	Manager2(Args&&... args) : problem(std::forward<Args>(args)...), root(states.end()) {}
 	void clear();
-	size_t solve_breadth(uint8_t stop_depth);
+	std::vector<size_t> solve_breadth(uint8_t stop_depth);
 	void write(Output2& output);
 
 private:
@@ -156,8 +166,8 @@ private:
 	NodeIdMap node_ids;				// On writing, store map assigning ids to nodes
 	
 	// Helper methods
-	size_t expand(const Iterator& node);
-	size_t improve_node(Iterator& node, uint8_t target_depth);
+	void expand(const Iterator& node);
+	void improve_node(Iterator& node, uint8_t target_depth);
 	void write_weighing(Output2& output, Iterator& node);
 	void write_node(Output2& output, Iterator& node);
 };
@@ -360,41 +370,42 @@ void Manager2<P>::clear()
 }
 
 template<Problem P>
-size_t Manager2<P>::solve_breadth(uint8_t stop_depth)
+std::vector<size_t> Manager2<P>::solve_breadth(uint8_t stop_depth)
 {
 	// Start by clearing the graph, but expand the root node
 	// When we return the root node we will know that we have completed the iteration
 	clear();
 	Iterator root_iterator(*this);
-	size_t node_counter = expand(root_iterator) + 1;
+	expand(root_iterator);
+	std::vector<size_t> graph_sizes{1, states.size()};
 
 	// We perform iterations from the root, each of which must increase its depth_min by one
 	// We stop when we have found a minimal solution to the problem
 	auto& root_status = root_iterator.value();
 	while (!root_status.is_resolved() && root_status.depth_min < stop_depth)
 	{
-		node_counter += improve_node(root_iterator, root_status.depth_min + 1);
+		improve_node(root_iterator, root_status.depth_min + 1);
+		graph_sizes.push_back(states.size());
 	}
-	return node_counter;
+	return graph_sizes;
 }
 
 template <Problem P>
-size_t Manager2<P>::improve_node(Iterator& node, uint8_t target_depth)
+void Manager2<P>::improve_node(Iterator& node, uint8_t target_depth)
 {
 	// Ensure that the input node is either resolved, or its depth_min is not smaller than the target
 	// We may expand the node and visit its children
 	// The iterator may change within this method, but it should always have same value on exit as it did no entry
 	
 	// Ensure that input node is expanded (method does nothing if node is solved, or if it was already expanded)
-	size_t node_counter = expand(node);
+	expand(node);
 	
 	// We will exit immediately if the goal is already met
 	auto& status = node.value();
 	if (status.is_resolved() || status.depth_min >= target_depth)
 	{
-		return node_counter;
+		return;
 	}
-	
 
 	// The current status of our child nodes does not permit us to meet the goal for this node
 	// We must have child nodes (since a solved node always meets the goal)
@@ -411,7 +422,7 @@ size_t Manager2<P>::improve_node(Iterator& node, uint8_t target_depth)
 			// This process must stop because expanding a node will either resolve it or set its depth_min to 2 or better
 			// We are using recursion as against iteration.  The depth of the recursion is at most the number of weighings
 			// in the solution, which will be a small integer so we should not risk stack overflow.
-			node_counter += improve_node(node, target_depth - 1);
+			improve_node(node, target_depth - 1);
 
 			// The depth_max of the weighing is the worst depth_max of its three outcomes
 			worst_depth_max = std::max(worst_depth_max, node.value().depth_max);
@@ -436,7 +447,7 @@ size_t Manager2<P>::improve_node(Iterator& node, uint8_t target_depth)
 				// We have made the required improvement, so we can exit now without looking at other children
 				// TODO: Ideally problem would let us sort children to increase likelyhood of exiting here
 				node.advance_parent();
-				return node_counter;
+				return;
 			}
 		}
 	} while (node.advance_sibling());
@@ -458,11 +469,10 @@ size_t Manager2<P>::improve_node(Iterator& node, uint8_t target_depth)
 	}
 	assert(status.depth_min <= status.depth_max);
 	assert(status.depth_min >= target_depth);
-	return node_counter;
 }
 
 template <Problem P>
-size_t Manager2<P>::expand(const Iterator& node)
+void Manager2<P>::expand(const Iterator& node)
 {
 	// Ensure that the node has full compliment of children, computing its depth if possible
 	// Return the number of children added to the node (if it was already expanded we return 0)
@@ -473,7 +483,7 @@ size_t Manager2<P>::expand(const Iterator& node)
 	// An attempt to expand a node that was already expanded does nothing
 	if (status.is_expanded())
 	{
-		return 0;
+		return;
 	}
 
 	// We do not attempt to consider whether or not to expand this node based on path taken to reach it
@@ -593,7 +603,7 @@ size_t Manager2<P>::expand(const Iterator& node)
 			// There is no point in continuing to expand this node's children since we cannot find a better weighing
 			// Similarly there is no point in recording any of the other weighings we examined
 			status.children = std::vector<Child>{Child{child_keys, weighing_number}};
-			return 1;
+			return;
 		}
 
 		// It is possible that several outcomes lead to equivalent states
@@ -655,9 +665,6 @@ size_t Manager2<P>::expand(const Iterator& node)
 		// then our min depth is that value
 		status.depth_min = std::min(static_cast<uint8_t>(worst_child_min_depth + 1), status.depth_max);
 	}
-
-	// Return the number of children that we created (its not same as number of nodes)
-	return status.children.size();
 }
 
 template <Problem P>
@@ -708,6 +715,31 @@ void Manager2<P>::write_weighing(Output2& output, Iterator& node)
 	// We output a description of the node's weighing, and then visit each recorded outcome of the node
 	// On exit the iterator will point to a node reachable from entry node via advance_outcome()
 	// and which cannot advance its outcome any more
+	
+	// Did caller only ask to show happy path
+	if (output.only_happy_path())
+	{
+		// We will only show this node if all three of its outcomes are resolved
+		// Of course its possible that this node is resolved, but it is not the best output
+		// But we believe that this approach will filter out most false paths
+		Iterator save_node = node;
+		bool all_resolved = node.value().is_resolved();
+		while (node.advance_outcome())
+		{
+			all_resolved &= node.value().is_resolved();
+		}
+		if (all_resolved)
+		{
+			// Move back to saved position to allow method to show content
+			node = save_node;
+		}
+		else
+		{
+			// Prune this weighing (note we have already advanced to last outcome as required)
+			return;
+		}
+	}
+	
 	auto& weighing = node.weighing();
 	output.println("{{ // child_index={:<6} weighing_number={}", node.child_number(), node.weighing_number());
 	output.indent();

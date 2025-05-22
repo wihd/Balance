@@ -24,8 +24,8 @@ constexpr uint8_t coint_count = 5;
 int main(int argc, const char * argv[]) {
 	// Instantiate a manager to solve a specific problem
 	Manager2<ProblemFindMajority2> manager(coint_count);
-	std::println("Coin count = {}", coint_count);
-	manager.solve_breadth(coint_count);
+	std::println("Coin count: {}", coint_count);
+	std::println("Graph size at each depth: {}", manager.solve_breadth(coint_count));
 
 	// Output our state
 	Output2 output;
