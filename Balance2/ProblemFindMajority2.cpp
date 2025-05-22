@@ -679,7 +679,28 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 	// ensure that H is in the majority.
 	size_t h_count = std::reduce(distributions.begin(), distributions.end(), 0, SumBinaryOp());
 	size_t l_count = distributions.size() * coin_count - h_count;
-	if (l_count > h_count)
+	bool swap_coins = (l_count > h_count);
+	if (h_count == l_count)
+	{
+		// The sum of the counts was same for L and H and so does not favour one over other
+		// We will try the sum of the squares as well
+		// Note that although we can compute the sum of H with std::reduce(), seems not worth messing
+		// with reduce_transformation or the like to get l_count.
+		h_count = l_count = 0;
+		for (auto i = 0; i != partition->size(); ++i)
+		{
+			auto part_size = (*partition)[i];
+			for (auto& d : distributions)
+			{
+				h_count += d[i] * d[i];
+				l_count += (part_size - d[i]) * (part_size - d[i]);
+			}
+		}
+		swap_coins = (l_count > h_count);
+	}
+
+	// Did we decide to swap the coins?
+	if (swap_coins)
 	{
 		// Since we own the distributions we will modify them in place
 		for (auto i = 0; i != partition->size(); ++i)
@@ -691,8 +712,6 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 			}
 		}
 	}
-	
-	// TODO: Can we identify an invarient that would allow us to sometimes swap L and H when thier counts are equal?
 	
 	// Next we sort the parts
 	// If two parts have different sizes then their relative order is fixed by partition
