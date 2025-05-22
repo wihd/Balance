@@ -58,7 +58,7 @@ public:
 											  Partition2* partition);
 	bool is_solved(const StateType& state);
 	void write_description(Output2& output);
-	void write_solved_node(Output2& output, const StateType& state, const char* outcome_name);
+	void write_solved_node(Output2& output, const StateType& state);
 	void write_ambiguous_state(Output2& output, const StateType& state);
 
 private:

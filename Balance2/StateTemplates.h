@@ -66,8 +66,7 @@ concept Problem = requires(P problem,
 						   const P::StateType& state_reference,
 						   Partition2* partition,
 						   Weighing2* weighing,
-						   Output2& output,
-						   const char* name)
+						   Output2& output)
 {
 	// We expect that P will define a type of a state of this problem
 	typename P::StateType;
@@ -94,7 +93,7 @@ concept Problem = requires(P problem,
 	
 	// We provide a number of output methods to report what is happening within a problem
 	{ problem.write_description(output) };
-	{ problem.write_solved_node(output, state_reference, name) };
+	{ problem.write_solved_node(output, state_reference) };
 	{ problem.write_ambiguous_state(output, state_reference) };
 };
 

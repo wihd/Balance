@@ -96,7 +96,8 @@ class Manager2
 		bool is_expanded() const { return depth_max != DEPTH_INFINITY || !children.empty(); }
 		
 		// Output the depth numbers as a single line on output
-		void write_resolution(Output2& output) const;
+		std::string format_resolution() const;
+		void write_resolution(Output2& output) const { output.println("Status:    {}", format_resolution()); }
 	};
 	
 	using StatesType = std::map<Key, Status, PointerComparator<typename P::StateType>>;
@@ -118,6 +119,7 @@ class Manager2
 		Outcome outcome() const { return outcomes.back(); }
 		Partition2* input_partition() const { return path[path.size() - 2]->first.get()->partition; }
 		decltype(auto) weighing() const { return input_partition()->get_children()[child_numbers.back()]; }
+		Partition2* output_partition() const { return weighing().output; }
 
 		// Modifiers
 		bool advance_first_child();
@@ -162,23 +164,23 @@ private:
 // class Manager2<P>::Status
 
 template <Problem P>
-void Manager2<P>::Status::write_resolution(Output2& output) const
+std::string Manager2<P>::Status::format_resolution() const
 {
 	if (depth_max == 0)
 	{
-		output << "Status:    Problem solved here";
+		return "Leaf node";
 	}
 	else if (is_resolved())
 	{
-		output.println("Status:    Optimal solution at depth {}", depth_max);
+		return std::format("Optimal solution at depth {}", depth_max);
 	}
 	else if (depth_max < DEPTH_INFINITY)
 	{
-		output.println("Status:    Found solution at depth {}, but only explored to depth {}", depth_max, depth_min);
+		return std::format("Status:    Solution at depth {}; explored to depth {}", depth_max, depth_min);
 	}
 	else
 	{
-		output.println("Status:    Explored to depth {} but no solution found", depth_min);
+		return std::format("Status:    No solution; explored to depth {}", depth_min);
 	}
 }
 
@@ -665,6 +667,7 @@ void Manager2<P>::write(Output2& output)
 	
 	// Describe the state of the root node
 	Iterator node(*this);
+	node.key().partition->write(output);
 	problem.write_ambiguous_state(output, node.key());
 	
 	// Our 'tree' is really a graph but we do not want to list each node more than once
@@ -706,7 +709,8 @@ void Manager2<P>::write_weighing(Output2& output, Iterator& node)
 	output << "{";
 	output.indent();
 	weighing.weighing->write(output, *weighing.output);
-	
+	weighing.output->write(output);
+
 	// Iterate over each of the childen
 	do {
 		write_node(output, node);
@@ -722,13 +726,14 @@ void Manager2<P>::write_node(Output2& output, Iterator& node)
 {
 	// Output a description of the current node, starting with its outcome within its weighing
 	
-	// If we have visited the node before we just output one line and do not attempt to visit more children
+	// If we have visited the node before we just output one line and do not attempt to write any more
 	if (node_ids.find(node.key_ptr()) != node_ids.end())
 	{
-		output.println("{} Revisited #{:<8} depth={:<4}",
+		output.println("{} Revisited #{:<6} depth={:<3} status=<{}>",
 					   outcome_names[node.outcome()],
 					   node_ids[node.key_ptr()],
-					   node.depth());
+					   node.depth(),
+					   node.value().format_resolution());
 		return;
 	}
 	
@@ -741,6 +746,40 @@ void Manager2<P>::write_node(Output2& output, Iterator& node)
 				   node.depth());
 	output.indent();
 	node.value().write_resolution(output);
+	
+	// Write a summary of the state of the node
+	
+	// We already wrote (as part of the weighing) the partition induced by the weighing
+	// But the node might have merged some parts - if it did we write the node's partition here
+	if (node.output_partition() != node.key().partition)
+	{
+		node.key().partition->write(output);
+	}
+	
+	// If the node is solved here we call a different output function
+	if (node.value().depth_max == 0)
+	{
+		problem.write_solved_node(output, node.key());
+	}
+	else
+	{
+		problem.write_ambiguous_state(output, node.key());
+	}
+	
+	// If the node has children we write them now
+	if (node.advance_first_child())
+	{
+		output << "Children:  [";
+		output.indent();
+		do {
+			write_weighing(output, node);
+		} while (node.advance_sibling());
+
+		// Close the Children scope
+		output.outdent();
+		output << "]";
+		node.advance_parent();
+	}
 	
 	// End the description of this node
 	output.outdent();

@@ -804,7 +804,7 @@ void ProblemFindMajority2::write_description(Output2& output)
 				   coin_count, minimum_count, maximum_count);
 }
 
-void ProblemFindMajority2::write_solved_node(Output2& output, const StateType& state, const char* outcome_name)
+void ProblemFindMajority2::write_solved_node(Output2& output, const StateType& state)
 {
 	// Output a description of why a node is solved
 	// We should introduce the description with the given outcome name
@@ -815,16 +815,14 @@ void ProblemFindMajority2::write_solved_node(Output2& output, const StateType& s
 	// If there is only one description we will write it on one line
 	if (distributions.size() == 1)
 	{
-		output.println("{} <Solved: Majority {}>  Heavy-Coins-per-Part: {}",
-					   outcome_name,
+		output.println("State:     <Solved: Majority {}>  Heavy-Coins-per-Part: {}",
 					   is_majority(distributions[0]) ? "Heavy" : "Light",
 					   distributions[0]);
 	}
 	else
 	{
 		// We need multiple lines to describe the state
-		output.println("{} <Majority {}>  Multiple-Distributions: {} {{",
-					   outcome_name,
+		output.println("State:     <Majority {}>  Multiple-Distributions: {} {{",
 					   is_majority(distributions[0]) ? "Heavy" : "Light",
 					   distributions.size());
 		output.indent();
@@ -858,7 +856,6 @@ void ProblemFindMajority2::write_ambiguous_state(Output2& output, const StateTyp
 	
 	// We always display it with multiple lines, putting partition on its own line
 	// We don't provide an outcome name - the assumption is that we will also report information about children
-	state.partition->write(output);
 	output.println("State:     Ambiguous: Heavy Majority: {};  Light Majority: {}  {{",
 				   count_majority, count_minority);
 	output.indent();
