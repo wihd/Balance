@@ -640,9 +640,9 @@ void Manager2<P>::expand(const Iterator& node)
 			
 			// Even if the new child was not solved, it is possible (but unlikely) that it does let us improve the depth
 			// NB: We already checked deepest_outcome != 0, so it is safe to subtract one from it without underflow
-			if (deepest_outcome < DEPTH_INFINITY && status.depth_max > deepest_outcome - 1)
+			if (deepest_outcome < DEPTH_INFINITY && status.depth_max > deepest_outcome + 1)
 			{
-				status.depth_max = deepest_outcome - 1;
+				status.depth_max = deepest_outcome + 1;
 			}
 		}
 	}
