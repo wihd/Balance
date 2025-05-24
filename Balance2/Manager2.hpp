@@ -168,7 +168,7 @@ private:
 	// Helper methods
 	void expand(const Iterator& node);
 	void improve_node(Iterator& node, uint8_t target_depth);
-	void write_weighing(Output2& output, Iterator& node);
+	bool write_weighing(Output2& output, Iterator& node);
 	void write_node(Output2& output, Iterator& node);
 };
 
@@ -694,7 +694,11 @@ void Manager2<P>::write(Output2& output)
 		output << "Children:  [";
 		output.indent();
 		do {
-			write_weighing(output, node);
+			if (write_weighing(output, node))
+			{
+				// When writing happy path we do not print more than one weighing child of a node
+				break;
+			}
 		} while (node.advance_sibling());
 
 		// Close the Children scope
@@ -712,15 +716,16 @@ void Manager2<P>::write(Output2& output)
 }
 
 template <Problem P>
-void Manager2<P>::write_weighing(Output2& output, Iterator& node)
+bool Manager2<P>::write_weighing(Output2& output, Iterator& node)
 {
 	// On entry the iterator will point to a non-root node (it should be first node with current weighing)
 	// We output a description of the node's weighing, and then visit each recorded outcome of the node
 	// On exit the iterator will point to a node reachable from entry node via advance_outcome()
 	// and which cannot advance its outcome any more
+	// Return true if we want to prune our siblings (because we wrote on happy path)
 	
 	// Did caller only ask to show happy path
-	if (output.only_happy_path())
+	if (output.happy_path())
 	{
 		// We will only show this node if all three of its outcomes are resolved
 		// Of course its possible that this node is resolved, but it is not the best output
@@ -739,7 +744,7 @@ void Manager2<P>::write_weighing(Output2& output, Iterator& node)
 		else
 		{
 			// Prune this weighing (note we have already advanced to last outcome as required)
-			return;
+			return false;
 		}
 	}
 	
@@ -757,6 +762,7 @@ void Manager2<P>::write_weighing(Output2& output, Iterator& node)
 	// End the weighing grouping
 	output.outdent();
 	output << "}";
+	return output.happy_path() && output.unique_happy_path();
 }
 
 template <Problem P>
@@ -810,7 +816,10 @@ void Manager2<P>::write_node(Output2& output, Iterator& node)
 		output << "Children:  [";
 		output.indent();
 		do {
-			write_weighing(output, node);
+			if (write_weighing(output, node))
+			{
+				break;
+			}
 		} while (node.advance_sibling());
 
 		// Close the Children scope

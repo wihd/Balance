@@ -19,7 +19,7 @@
 #include "ProblemFindMajority2.hpp"
 #include "Output2.hpp"
 
-constexpr uint8_t coint_count = 7;
+constexpr uint8_t coint_count = 9;
 
 int main(int argc, const char * argv[]) {
 	// Instantiate a manager to solve a specific problem
@@ -29,7 +29,7 @@ int main(int argc, const char * argv[]) {
 
 	// Output our state
 	Output2 output;
-	output.set_only_happy_path(true);
+	output.set_happy_path(true);
 	manager.write(output);
 	return 0;
 }

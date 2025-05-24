@@ -22,8 +22,10 @@ public:
 	Output2(const std::filesystem::path& path);
 	
 	// Accessors
-	void set_only_happy_path(bool value) { _only_happy_path = value; }
-	bool only_happy_path() const { return _only_happy_path; }
+	void set_happy_path(bool value) { _happy_path = value; }
+	bool happy_path() const { return _happy_path; }
+	void set_unique_happy_path(bool value) { _unique_happy_path = value; }
+	bool unique_happy_path() const { return _unique_happy_path; }
 
 	// Change the indentation level
 	void indent();
@@ -41,7 +43,8 @@ public:
 private:
 	FILE* destination;						// Location into which we write the output (file or stdout)
 	std::string prefix;						// Prefix written to indent output
-	bool _only_happy_path = false;			// If true only display weighings contributing to the result
+	bool _happy_path = false;			// If true only display weighings contributing to the result
+	bool _unique_happy_path = true;			// If true only show one happy path at each level
 };
 
 #endif /* Output_hpp */
