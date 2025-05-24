@@ -160,11 +160,14 @@ bool SplitterThree::advance(ProblemFindMajority2::Distribution& distribution, co
 // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ProblemFindMajority
 
-ProblemFindMajority2::ProblemFindMajority2(uint8_t coin_count, bool is_almost_balanced) :
+ProblemFindMajority2::ProblemFindMajority2(uint8_t coin_count,
+										   bool is_almost_balanced,
+										   EnumJoinStrategy join_strategy) :
 	coin_count(coin_count),
 	minimum_count(1),				// Must be at least one coin of each variety
 	maximum_count(coin_count - 1),	// Must be at least one coin that is not of each variety
-	threshold((coin_count + 1) / 2)
+	threshold((coin_count + 1) / 2),
+	join_strategy(join_strategy)
 {
 	// There MUST be an odd number of coins
 	assert(coin_count % 2 == 1);
@@ -392,6 +395,73 @@ OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_wei
 	return result;
 }
 
+ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_partition(
+	const std::vector<const Distribution*>& distributions, Partition2* partition)
+{
+	// If there are no distributions then this outcome is impossible
+	// There is no point in having a non-null state for an impossible outcome
+	if (distributions.empty())
+	{
+		return {};
+	}
+	
+	// We would obtain the correct solution if we just returned the distribtions + partition we already have
+	// But we will attempt several optimisations which have potential to considerably reduce work done.
+	// Many distribution+partition combinations are isomorphic in sense that that a solution to one
+	// corresponds directly (in particular has identical depth) to a solution to the other.
+	// When this happens we want to always use the **same** distribution and partition to reduce the number
+	// of cases we consider.  It isn't enough to allow us to enumerate all states (its still exponential!)
+	// but we did reduce number of states for tractable instances by a factor of more than 40.
+	
+	// This function will identify parts that can be joined together.  Sometimes, most notablely when
+	// we have identified precise variety of several coins, we will find several parts where using one part
+	// and splitting it to the original parts results in the same distributions.  In that case we have
+	// multiple ways of representing the same state so we should switch to a single representation.
+	// Its clear that the single representation we should use is the one with fewest parts since it
+	// consumes less memory now, and will have a much lower branching factor in the future.
+	
+	// But the effort required to search for parts to join is considerable.  In the worst case we have
+	// an algorithm that is cubic in number of parts, log-linear in number of distributions.
+	// Also we do not see that many cases where the more obscure joins are possible.
+	// So we use an enumeration to control what to do.
+	
+	// The distributions passed into this function are constant.  If we do join parts we will need to
+	// create new distributions.  Since the downstream functions will find it convenient to edit
+	// distributions in place (and since ultimately we will return a uniquely owned state) we find
+	// it convenient to create owned distributions here which will be moved into final object.
+	Partition2* joined_partition = nullptr;
+	Distributions joined_distributions;
+	joined_distributions.reserve(distributions.size());
+
+	// We have been configured with join algorithm to use
+	using enum EnumJoinStrategy;
+	switch (join_strategy)
+	{
+		case None:
+			break;
+		case SameVariety:
+			joined_partition = join_same_variety(distributions, partition, joined_distributions);
+			break;
+		case All:
+			joined_partition = join_all(distributions, partition, joined_distributions);
+			break;
+	}
+	
+	// Were we unable to compute a new partition by joining parts from the original one
+	if (!joined_partition)
+	{
+		// We will use the original partion, but we still need to copy out the distribution
+		joined_partition = partition;
+		for (auto& d : distributions)
+		{
+			joined_distributions.emplace_back(d->begin(), d->end());
+		}
+	}
+
+	// Call next level function that will look for more optimisations
+	return simplify_state(std::move(joined_distributions), joined_partition);
+}
+
 // Define helper types and functions for simplify_partition
 using GroupType = std::pair<std::vector<size_t>, uint8_t>;
 constexpr uint8_t UniquePartMarker = 0xff;
@@ -417,25 +487,15 @@ bool compare_groups(const GroupType& a, const GroupType& b)
 	return *a_it < *b_it;
 }
 
-ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_partition(
-	const std::vector<const Distribution*>& distributions, Partition2* partition)
+Partition2* ProblemFindMajority2::join_same_variety(const std::vector<const Distribution*>& distributions,
+													Partition2* partition,
+													Distributions& output_distributions)
 {
-	// If there are no distributions then this outcome is impossible
-	// There is no point in having a non-null state for an impossible outcome
-	if (distributions.empty())
-	{
-		return {};
-	}
-	
-	// We would obtain the correct solution if we just returned the distribtions + partition we already have
-	// But we will attempt several optimisations which have potential to considerably reduce work done
-	
-	// First we observe that we are not required to use the output partion we were given
-	// If can identify several coins whose distribution is identical then in future weighings we can
-	// treat these coins as indistiguishable.  To be more precise although we can distinguish between
-	// these coins there is no reason to do so.  For example if we have proven that several coins are H
-	// then we can put these coins into one part.  If three coins get grouped together it halves the
-	// number of weighings we need to consider, so this can be a significant improvement.
+	// Identify parts that can be joined, and if we find some returned the joined distribution
+	// If we cannot join anything we should return nullptr and leave output_distributions alone
+	// We perform a much faster search (than `join_all`) because we only join parts that in every distribution
+	// are listed as being restricted to a single variety.  This is most likely case and allows us to find
+	// all of the joins in log-linear complexity over number of parts.
 
 	// Identify the columns that could be joined together
 	std::vector<GroupType> groups;
@@ -513,70 +573,58 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_partition(
 		}
 	}
 	
-	// Have we ended up with fewer groups than we started with parts?
-	if (groups.size() != partition->size())
+	// If we have same number of groups as we had parts then we did not find anything to join
+	if (groups.size() == partition->size())
 	{
-		// It is worth switching to a different partition
-		// We start by sorting the groups because the merged parts must be in ascending order by size
-		std::sort(groups.begin(), groups.end(), compare_groups);
+		return nullptr;
+	}
+	
+	// Sorting the groups because the merged parts must be in ascending order by size
+	std::sort(groups.begin(), groups.end(), compare_groups);
+	
+	// For each input distribution we need to compute the
+	for (auto& input : distributions)
+	{
+		Distribution& output = output_distributions.emplace_back();
 		
-		// Get the cached instance of the joined partition
-		std::vector<uint8_t> joined_parts;
+		// Each group specifies the part(s) to be joined to make the next value in the output distribution
 		for (auto& group : groups)
 		{
-			joined_parts.push_back(group.second);
-		}
-		auto joined_partion = Partition2::get_instance(std::move(joined_parts));
-		
-		// We must allocate new distributions
-		Distributions joined_distributions(distributions.size());
-		for (size_t i = 0; i != distributions.size(); ++i)
-		{
-			const Distribution& input = *distributions[i];
-			Distribution& output = joined_distributions[i];
-			
-			// Each group specifies the part(s) to be joined to make the next value in the output distribution
-			for (auto& group : groups)
+			auto it = group.first.begin();
+			if (*it == UniquePartMarker)
 			{
-				auto it = group.first.begin();
-				if (*it == UniquePartMarker)
+				// This group was not joined, so we can copy over a single part
+				++it;
+				output.push_back((*input)[*it]);
+			}
+			else
+			{
+				// Create new entry in output distribution
+				output.push_back((*input)[*it]);
+				
+				// Join in other distributions
+				for (++it; it != group.first.end(); ++it)
 				{
-					// This group was not joined, so we can copy over a single part
-					++it;
-					output.push_back(input[*it]);
-				}
-				else
-				{
-					// Create new entry in output distribution
-					output.push_back(input[*it]);
-					
-					// Join in other distributions
-					for (++it; it != group.first.end(); ++it)
-					{
-						output.back() += input[*it];
-					}
+					output.back() += (*input)[*it];
 				}
 			}
 		}
-				
-		// Call next level function that will look for more optimisations
-		return simplify_state(std::move(joined_distributions), joined_partion);
 	}
-	else
+			
+	// Extract the joined partition and return the cached instance of this partition
+	std::vector<uint8_t> joined_parts;
+	for (auto& group : groups)
 	{
-		// We will stick with the original output partition
-		// However the next function requires a distributions vector that it can both move and modify
-		// In the other branch this was easy (it made a new distributions anyway)
-		// In this branch we need to make a copy (we didn't do it earlier in case we entered other branch)
-		Distributions copy_distributions;
-		copy_distributions.reserve(distributions.size());
-		for (auto& d : distributions)
-		{
-			copy_distributions.emplace_back(d->begin(), d->end());
-		}
-		
-		return simplify_state(std::move(copy_distributions), partition);
+		joined_parts.push_back(group.second);
 	}
+	return Partition2::get_instance(std::move(joined_parts));
+}
+
+Partition2* ProblemFindMajority2::join_all(const std::vector<const Distribution*>& distributions,
+										   Partition2* partition,
+										   Distributions& output_distributions)
+{
+	return nullptr;
 }
 
 // Helper class to help compare two parts with respect to a distribution

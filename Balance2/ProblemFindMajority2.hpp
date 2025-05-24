@@ -28,6 +28,13 @@ class Output2;
 class ProblemFindMajority2
 {
 public:
+	// Options for how to simplify states by joining parts together
+	enum class EnumJoinStrategy {
+		None,				// Do not join parts
+		SameVariety,		// Join parts iff all coins in part have same variety in each distribution
+		All					// Join parts whenever possible
+	};
+	
 	// A Distribution specifies for each part the number of H coins that might be in the part
 	using Distribution = std::vector<uint8_t>;
 	using Distributions = std::vector<Distribution>;
@@ -49,7 +56,9 @@ public:
 	};
 	using StateTypeRef = std::unique_ptr<StateType>;
 	
-	ProblemFindMajority2(uint8_t coin_count, bool is_almost_balanced = true);
+	ProblemFindMajority2(uint8_t coin_count,
+						 bool is_almost_balanced = true,
+						 EnumJoinStrategy join_strategy = EnumJoinStrategy::SameVariety);
 	
 	// Implement methods required to be a problem
 	StateTypeRef make_root();
@@ -66,13 +75,20 @@ private:
 	uint8_t minimum_count;				// Each variety must have at least this number of coins
 	uint8_t maximum_count;				// Each variety must have at most this number of coins
 	uint8_t threshold;					// If variety has this number of coins it is majority
-	
+	EnumJoinStrategy join_strategy;		// Specify effort taken to join parts in partition
+
 	// Helper functions
 	bool is_majority(const Distribution& distribution);
 	OutcomeArray<StateTypeRef> apply_weighing_to_distributions(const Distributions& distributions,
 															   Weighing2& weighing,
 															   Partition2* partition);
 	StateTypeRef simplify_partition(const std::vector<const Distribution*>& distributions, Partition2* partition);
+	Partition2* join_same_variety(const std::vector<const Distribution*>& distributions,
+								  Partition2* partition,
+								  Distributions& output_distributions);
+	Partition2* join_all(const std::vector<const Distribution*>& distributions,
+						 Partition2* partition,
+						 Distributions& output_distributions);
 	StateTypeRef simplify_state(Distributions&& distributions, Partition2* partition);
 };
 
