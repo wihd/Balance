@@ -620,11 +620,236 @@ Partition2* ProblemFindMajority2::join_same_variety(const std::vector<const Dist
 	return Partition2::get_instance(std::move(joined_parts));
 }
 
+// Helper class used to implement join_all
+// This class keeps track of some of the parameters
+class JoinAllHelper
+{
+	using Distributions = ProblemFindMajority2::Distributions;
+	using Distribution = ProblemFindMajority2::Distribution;
+	
+public:
+	JoinAllHelper(Distributions& distributions, Partition2* partition)
+		: distributions(distributions), partition(partition), indexes(distributions.size())
+	{
+		std::iota(indexes.begin(), indexes.end(), 0);
+		seen = indexes.begin();
+	}
+	bool check_pair(size_t first_part, size_t second_part);
+private:
+	Distributions& distributions;				// The vector of all distributions we are considering
+	Partition2* partition;						// The partition we are imposing
+	std::vector<int> indexes;					// Vector used as a heap to track the rows
+	std::vector<int>::iterator seen;			// Part of the vector beyond its heap
+	Distribution* current = nullptr;			// Sample distribution from current part
+	size_t part_a = 0;							// One of the parts we would like to join
+	size_t part_b = 0;							// Other part we would like to join
+	
+	// Helper functions
+	size_t make_joined_partition();
+	bool compare_indexes(int i, int j)
+	{
+		// Determine whether distribution i or j should come first
+		// where sort distributions lexiographically by size within each part
+		// except that we move part_a and part_b to the back of the compare order
+		if (i == j)
+		{
+			// A distribution is never smaller than itself
+			return false;
+		}
+		
+		auto& d_i = distributions[i];
+		auto& d_j = distributions[j];
+		
+		// Sort lexigraphically, except not on parts a and b
+		for (size_t part = 0; part != partition->size(); ++part)
+		{
+			if (part != part_a && part != part_b && d_i[part] != d_j[part])
+			{
+				return d_i[part] < d_j[part];
+			}
+		}
+		
+		// Now sort by a and b in order
+		if (d_i[part_a] != d_j[part_a])
+		{
+			return d_i[part_a] < d_j[part_a];
+		}
+		assert(d_i[part_b] != d_j[part_b]);		// We maintain invariant that all distributions are different
+		return d_i[part_b] < d_j[part_b];
+	}
+	
+	bool is_current_group()
+	{
+		// Test if the distribution whose index is top of the heap is from the current group
+		assert(seen != indexes.begin());
+		auto& distribution = distributions[indexes.front()];
+		for (size_t part = 0; part != partition->size(); ++part)
+		{
+			if (part != part_a && part != part_b && distribution[part] != (*current)[part])
+			{
+				return false;
+			}
+		}
+		
+		// All parts other than the parts we are comparing matched, so it is the same group
+		return true;
+	}
+};
+
+bool JoinAllHelper::check_pair(size_t first_part, size_t second_part)
+{
+	// We are now going to consider trying to join the two given parts
+	// Return false if we determine these parts cannot be joined
+	assert(first_part < second_part);
+	part_a = first_part;
+	part_b = second_part;
+	
+	// To decide that two parts can be joined will require us to examine all of the rows in order
+	// But usually we will abort after just looking at a few rows
+	// We use a heap in the hope that the heap is faster to build that a full sort
+	std::make_heap(indexes.begin(), indexes.end(), [this](int i, int j) { return compare_indexes(i, j); });
+	seen = indexes.end();
+	
+	// Create a vector recording the values that would be in a putative joined column
+	std::vector<uint8_t> joined_column;
+	
+	// Each time round this loop we will consume one or more rows from the same group
+	// We will exit early if we ever find that the rows in a group are inconsistent with being joinable
+	do
+	{
+		// Start a new group of related rows, under assumption that there is at least one more row unexamined
+		// We are starting a new group of rows that have same values for parts other than a/b as the current row
+		current = &distributions[indexes.front()];
+		auto a = (*current)[part_a];
+		auto b = (*current)[part_b];
+		joined_column.push_back(a + b);
+		
+		// As we advance through the sorted distributions with the same fixed vector we expect
+		// only a_value and b_value to change.  Since we sort by a before b, if this is joinable
+		// then each subsequent row will increase a value by 1 and decrese b value by 1.
+		// It will stop when either b_value is zero or a_value is the size of part a.
+		
+		// We require that it started at the beginning.  So either a_value must be 0 now,
+		// or b_value must be size of part[b]
+		if (a != 0 && b != (*partition)[part_b])
+		{
+			return false;
+		}
+		
+		// Remove the current distribution from the heap
+		std::pop_heap(indexes.begin(), seen, [this](int i, int j) { return compare_indexes(i, j); });
+		--seen;
+		
+		// The current row might be part of a larger group - try to consume more rows
+		while (seen != indexes.begin() && is_current_group())
+		{
+			// Check we can safely change a_value and b_value as required
+			if (a == (*partition)[part_a] || b == 0)
+			{
+				return false;
+			}
+			
+			// Check that the new top row has correct values
+			if (distributions[indexes.front()][part_a] != ++a || distributions[indexes.front()][part_b] != --b)
+			{
+				return false;
+			}
+			
+			// The row we read is consistent with the current pair, so we may consume it
+			joined_column.push_back(0xff);
+			std::pop_heap(indexes.begin(), seen, [this](int i, int j) { return compare_indexes(i, j); });
+			--seen;
+		}
+		
+		// There were no more rows in the current group
+		// It should have been the case that either we could not decrement b_value again, or could not increment the other
+		if (a != (*partition)[part_a] && b != 0)
+		{
+			return false;
+		}
+	} while (seen != indexes.begin());
+	
+	// We got to the end, so we may join the columns
+	
+	
+	
+	// The `joined_column` tells us which value to place in the new joined column for each row
+	// It uses 0xff if the row should be erased
+	return false;
+}
+
+size_t JoinAllHelper::make_joined_partition()
+{
+	// We have decided that we will join part_a and part_b
+	// We compute the new partition (and store it within this class)
+	// We return the part number of the joined part within it.
+	std::vector<uint8_t> parts;
+	for (size_t i = 0; i != part_a; ++i)
+	{
+		parts.push_back((*partition)[i]);
+	}
+	for (size_t i = part_a + 1; i != part_b; ++i)
+	{
+		parts.push_back((*partition)[i]);
+	}
+	
+	// We can determine size of the new part
+	uint8_t new_part_size = (*partition)[part_a] + (*partition)[part_b];
+	
+	// Insert remaining existing parts that are smaller than new part
+	size_t i = part_b + 1;
+	while (i != partition->size() && (*partition)[i] < new_part_size)
+	{
+		parts.push_back((*partition)[i]);
+		++i;
+	}
+	
+	// Insert the new part here
+	size_t result = parts.size();
+	parts.push_back(new_part_size);
+	
+	// Finally copy over any remaining parts
+	while (i != partition->size())
+	{
+		parts.push_back((*partition)[i]);
+		++i;
+	}
+	
+	// Replace the partition, and return part number of the new column
+	partition = Partition2::get_instance(std::move(parts));
+	return result;
+}
+
 Partition2* ProblemFindMajority2::join_all(const std::vector<const Distribution*>& distributions,
 										   Partition2* partition,
 										   Distributions& output_distributions)
 {
-	return nullptr;
+	// We search for all possible joins between parts
+	// Observe that if parts (a), (b) and (c) can be joined then so can (a) and (b), then (a, b) with (c)
+	// So we will search for pairs of parts to join.  We will view the parts in partition order
+	// so if we make a join the newly created column will be placed further to right.
+	// We do not attempt to optimise for multiple joins (which is unlikely to occur!)
+
+	// When we join parts we will need to rebuild the distributions.
+	// Since this might happen several times it will be easier to copy out the distributions here
+	for (auto& d : distributions)
+	{
+		output_distributions.emplace_back(d->begin(), d->end());
+	}
+	
+	// Use helper class to track whether or not columns are joinable and the corresponding intermediate state
+	JoinAllHelper helper(output_distributions, partition);
+	
+	// Note that we could replace partition during this loop, but the index numbers remain valid
+	// So we must use < not != when looking to see if we have reached end of loop
+	for (size_t a = 0; a < partition->size(); ++a)
+	{
+		for (size_t b = a + 1; b < partition->size(); ++b)
+		{
+			
+		}
+	}
+	return partition;
 }
 
 // Helper class to help compare two parts with respect to a distribution
