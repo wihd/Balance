@@ -634,6 +634,7 @@ public:
 		std::iota(indexes.begin(), indexes.end(), 0);
 		seen = indexes.begin();
 	}
+	Partition2* get_partition() { return partition; }
 	bool check_pair(size_t first_part, size_t second_part);
 private:
 	Distributions& distributions;				// The vector of all distributions we are considering
@@ -646,6 +647,7 @@ private:
 	
 	// Helper functions
 	size_t make_joined_partition();
+	void make_joined_distribution(size_t new_part, std::vector<uint8_t>& joined_column);
 	bool compare_indexes(int i, int j)
 	{
 		// Determine whether distribution i or j should come first
@@ -770,12 +772,14 @@ bool JoinAllHelper::check_pair(size_t first_part, size_t second_part)
 	} while (seen != indexes.begin());
 	
 	// We got to the end, so we may join the columns
+	make_joined_distribution(make_joined_partition(), joined_column);
 	
-	
-	
-	// The `joined_column` tells us which value to place in the new joined column for each row
-	// It uses 0xff if the row should be erased
-	return false;
+	// The indexes might now be incorrect because we might have fewer rows - erase any extra ones but preserve order
+	if (indexes.size() > distributions.size())
+	{
+		std::erase_if(indexes, [&](int index) { return index >= distributions.size(); });
+	}
+	return true;
 }
 
 size_t JoinAllHelper::make_joined_partition()
@@ -820,6 +824,67 @@ size_t JoinAllHelper::make_joined_partition()
 	return result;
 }
 
+void JoinAllHelper::make_joined_distribution(size_t new_part, std::vector<uint8_t>& joined_column)
+{
+	// We replace the distribution with a joined distribution
+	Distribution temp;
+
+	// Walk over the entries in the joined column
+	// Because we popped the heap entires to the back of the heap vector we can obtain the corresponding index
+	// by looking at this vector in reverse order
+	auto index_id = indexes.rbegin();
+	for (uint8_t value : joined_column)
+	{
+		// Select the distribution we will edit
+		auto& distribution = distributions[*index_id];
+		++index_id;
+		
+		// Did we decide to remove this row?
+		if (value == 0xff)
+		{
+			// We cannot erase row now since this will upset index - we will just set it empty vector
+			distribution.clear();
+		}
+		else
+		{
+			// Build a new distribution for this row
+			temp.clear();
+			for (size_t i = 0; i != part_a; ++i)
+			{
+				temp.push_back(distribution[i]);
+			}
+			for (size_t i = part_a + 1; i != part_b; ++i)
+			{
+				temp.push_back(distribution[i]);
+			}
+			
+			// Insert remaining parts (NB since partition has been replaced we use distribution.size())
+			for (size_t i = part_b + 1; i != distribution.size(); ++i)
+			{
+				// The new_part index number is with repect to new partition
+				if (temp.size() == new_part)
+				{
+					temp.push_back(value);
+				}
+				temp.push_back(distribution[i]);
+			}
+
+			// New part might also be after all of the existing parts
+			if (temp.size() == new_part)
+			{
+				temp.push_back(value);
+			}
+			
+			// Put the temp distribution into place
+			distribution.swap(temp);
+		}
+	}
+
+	// If we cleared some rows we must erase them now
+	// C++20 Note: Helper algorithm to simplify erasing rows that satisfy some predicate
+	std::erase_if(distributions, [](const auto& d) { return d.empty(); });
+}
+
 Partition2* ProblemFindMajority2::join_all(const std::vector<const Distribution*>& distributions,
 										   Partition2* partition,
 										   Distributions& output_distributions)
@@ -846,7 +911,19 @@ Partition2* ProblemFindMajority2::join_all(const std::vector<const Distribution*
 	{
 		for (size_t b = a + 1; b < partition->size(); ++b)
 		{
-			
+			if (helper.check_pair(a, b))
+			{
+				// The distribution was changed in place, need to update partition as well (for loops)
+				partition = helper.get_partition();
+				
+				// The original parts a and b no longer exist
+				// A new part was created and its part number must be >= part a's part number
+				// So we can keep using a for the next pair (although index now denotes a different part)
+				// But we need to restart b at a+1.  Since will be incremented just set it to a here.
+				// Note that although a still denotes a part, a+1 might not.  But if it does not then
+				// both loops will exit immediately (it would mean we joined last two parts).
+				b = a;
+			}
 		}
 	}
 	return partition;
