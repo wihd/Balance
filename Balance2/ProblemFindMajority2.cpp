@@ -929,64 +929,31 @@ Partition2* ProblemFindMajority2::join_all(const std::vector<const Distribution*
 	return partition;
 }
 
-// Helper class to help compare two parts with respect to a distribution
+// Helper class used to compare two parts
+// It caches a vector to compare lexiographically
+// We put the part_size at the beginning (so part_size controls order)
+// Otherwise we put the content of the column, but sorted (so two columns with same values compare equal)
 class PartCompareHelper
 {
 public:
 	PartCompareHelper(const ProblemFindMajority2::Distributions& distributions,
 					  size_t index,
-					  uint8_t part_size) :
-	distributions(distributions), values{part_size}, index(index) {}
-	uint8_t operator[](size_t i);
+					  uint8_t part_size) : values{part_size}
+	{
+		// We start values vector with the part_size
+		// Append the values from the corresponding column, in sorted order
+		values.reserve(distributions.size() + 1);
+		for (auto& distribution : distributions)
+		{
+			values.push_back(distribution[index]);
+		}
+		std::sort(++values.begin(), values.end());
+	}
+	auto operator<=>(const PartCompareHelper&) const = default;
 	
 private:
-	const ProblemFindMajority2::Distributions& distributions;	// Distributions
 	std::vector<size_t> values;									// Compare values we have computed
-	size_t index;												// Index number of this part
 };
-
-uint8_t PartCompareHelper::operator[](size_t i)
-{
-	// If we have already computed a value for entry i, return cached value
-	// Note that since the first value is the part_size, it will sort by part_size first of all
-	if (i < values.size())
-	{
-		return values[i];
-	}
-	
-	// We expect caller to ask for each value in turn, so we only need compute the next value
-	assert(i == values.size());
-	
-	// We will count the number of distributions that have size i+1
-	bool saw_larger = false;
-	size_t counter = 0;
-	for (auto& distribution : distributions)
-	{
-		if (distribution[index] == i - 1)
-		{
-			++counter;
-		}
-		else if (distribution[index] >= i)
-		{
-			saw_larger = true;
-		}
-	}
-	
-	// Cache this number
-	values.push_back(counter);
-	
-	// If there were no bigger values then there is no point in looking again
-	if (!saw_larger)
-	{
-		// Push a value based on the index number into the vector, but large enough to be unique
-		// This will have two effects
-		// i)  By making number bigger than distributions size() we know that it will disambiguate all parts
-		// ii) We keep part order stable when there is no reason to sort them
-		// Stability is important because we do not want to make changes when it is immaterial
-		values.push_back(distributions.size() + 1 + index);
-	}
-	return counter;
-}
 
 // We will use a functor object to allow us to reduce a vector with a constant
 // Hmm, I'm not convinced here that this is simpler than just explicitly summing the value!
@@ -1014,6 +981,72 @@ struct SumBinaryOp
 	size_t operator()(size_t a, size_t b) const { return a + b; }
 	 */
 };
+
+void reorder_distribution(ProblemFindMajority2::Distributions& input,
+						  std::vector<size_t>& sorted_indexes,
+						  ProblemFindMajority2::Distributions& output)
+{
+	// We copy the distributions from input into output
+	// We assume on entry that output already has already allocated all necessary space so we can just overwrite it
+	// We sort the columns into the given order as we copy them
+	// We sort the rows after that
+	size_t row_size = sorted_indexes.size();
+	for (size_t i = 0; i != input.size(); ++i)
+	{
+		auto& distribution_in = input[i];
+		auto& distribution_out = output[i];
+		for (size_t j = 0; j != row_size; ++j)
+		{
+			distribution_out[j] = distribution_in[sorted_indexes[j]];
+		}
+	}
+	
+	// Remove row order uncertainty by sorting it
+	std::sort(output.begin(), output.end());
+}
+
+typedef std::vector<std::pair<std::vector<size_t>, std::vector<size_t>>> RangesType;
+
+struct ColumnCompare
+{
+	bool operator()(size_t a, size_t b) const
+	{
+		// We compare two integers by lexiographically comparing the values found in the corresponding columns
+		if (a == b)
+		{
+			// Shortcut when comparing index with itself
+			return false;
+		}
+		for (auto&d : distributions)
+		{
+			if (d[a] != d[b])
+			{
+				return d[a] < d[b];
+			}
+		}
+		// Columns are identical, so we return false
+		return false;
+	}
+	ProblemFindMajority2::Distributions& distributions;
+};
+
+bool advance_sorted_index(const RangesType& ranges, const ColumnCompare& comparator)
+{
+	// We want to consider every permutation of each of the ranges
+	// We change sorted_indexes, and return false if we are back to the start
+	for (auto& range : ranges)
+	{
+		// Can we find a new permutation by changing this range?
+		if (std::next_permutation(range.first, range.second, comparator))
+		{
+			return true;
+		}
+		// If next_permutation was done on the given range it reset it back to the beginning
+	}
+	
+	// All of the ranges were reset, so there are no more permutations
+	return false;
+}
 
 ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distributions&& distributions,
 																		Partition2* partition)
@@ -1063,70 +1096,129 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 		}
 	}
 	
-	// Next we sort the parts
-	// If two parts have different sizes then their relative order is fixed by partition
-	// But if two parts have the same size then switching them around has no effect on solving the problem
-	// So we will sort them into ascending order by the histogram of the H counts in distributions
-	// Since aome parts will never need the histogram, and others will only need a few entries we will
-	// use helper classes that compute histogram on demand
+	// Next observe that the names attached to parts are unimportant
+	// So we can reorder parts without changing anything.  We want to put parts into a canonical order.
+	// This means that we can exchange columns within the distribution without changing the state.
+	// Note that each column is associated with a part size (from the partition, not the distribution)
+	// and two states that differ solely by part_size are still different.  So we cannot exchange columns
+	// that correspond to parts with different sizes.
+	
+	// But if two parts have the same size then switching them around has no effect on solving the problem.
+	// If two parts have different histograms (i.e. the values on the column are not the same values in
+	// a different order) then no matter how the rows are sorted the columns can never match.
+	// So it makes sense to order parts with respect to the sorted values on thier columns.
+	
+	// To avoid repeating the column sorting we will use helper classes of type PartCompareHelper
 	std::vector<PartCompareHelper> helpers;
 	for (size_t i = 0; i != partition->size(); ++i)
 	{
 		helpers.emplace_back(distributions, i, (*partition)[i]);
 	}
-	
-	// We will actually sort an array of index numbers
+
+	// To avoid unnecessary swaps we will actually sort an array of integers.
 	std::vector<size_t> sorted_indexes(partition->size());
 	std::iota(sorted_indexes.begin(), sorted_indexes.end(), 0);
 	std::sort(sorted_indexes.begin(), sorted_indexes.end(),
-			  [&helpers](auto a, auto b) -> bool {
-		// Bug fix: 2025-05-18: Sometimes this function is invoked with a == b
-		// It seems wrong to me - surely an efficient sort will not compare a value with itself
-		// But when it happens the loop below will never end, so we must eliminate this case
-		if (a == b)
-		{
-			return false;
-		}
-		
-		// Otherwise keep fetching values from both indexes until values are different
-		// Since each sequence of values ends in a value not otherwise used it must find a difference
-		// before it reaches end of sequence, even though different a and b have different lengths
-		size_t i = 0;
-		size_t a_value = 0;
-		size_t b_value = 0;
-		do
-		{
-			a_value = helpers[a][i];
-			b_value = helpers[b][i];
-			++i;
-		} while (a_value == b_value);
-		return a_value < b_value;
-	});
+			  [&helpers](auto a, auto b) -> bool { return helpers[a] < helpers[b]; });
+
+	// This approach helps, but does not fully solve the problem.  Consider following two distributions:
+	//	Partition: 2 2 3						2 2 3
+	//	           -----						-----
+	//			   2 0 1						0 2 1
+	//			   0 2 2						2 0 2
+	// The first and second columns have identical histograms so their order is non-deterministic.
+	// But if we exchange the columns in second one then the states become identical.
+	// I went looking for algorithm, but there is no known effective algorithm.  In particular one can model
+	// a graph as its agency matric.  If two graphs are isomorphic then their matrixes, after row/column
+	// exchanges are identical.  But determining if two graphs are isomorphic is neither known to be in P
+	// nor to be NP-complete.  (It is suspected that it is an NP-indeterminate problem.)
+	// In any case we will not find an efficient solution.  Given that this program is inherently
+	// infeasible, we will consider all of these cases individually.  Our hope is that since we found
+	// an example of the problem so easily that we will save more on having fewer states than it costs
+	// on trying to reduce each state to a simple representative.
 	
-	// Did the sorting actually make any difference?
-	if (!std::is_sorted(sorted_indexes.begin(), sorted_indexes.end()))
+	// We identify ranges within sorted_indexes where we have a non-trivial range of indexes that compare as equal
+	// Although there are range/views to replace the pair I'm not clear that it buys me much here
+	RangesType ranges;
+	auto b = sorted_indexes.begin();
+	auto e = std::next(b);
+	while (e != sorted_indexes.end())
 	{
-		// The sorting will not have induced any change in the partition
-		// But it will require us to sort the distributions
-		// We will sort them in place, since we own the distributions
-		// Thus we only need one temporary row
-		Distribution temp(partition->size());
-		for (auto& d : distributions)
+		// Do the iterators point to equal values
+		if (helpers[*b] == helpers[*e])
 		{
-			for (size_t i = 0; i != partition->size(); ++i)
-			{
-				temp[i] = d[sorted_indexes[i]];
-			}
-			d.swap(temp);
+			// Keep advancing e until it is different to a
+			while (++e != sorted_indexes.end() && helpers[*b] == helpers[*e]) {}
+			
+			// We have found a range of at least two indexes that equal for the helper
+			ranges.emplace_back(b, e);
+			b = e;
+		}
+		else
+		{
+			// Move to next pair
+			b = e;
+			++e;
 		}
 	}
 	
-	// The order of the distributions is immaterial, so we will sort them lexiographically
-	// The point here is to ensure that two distributions we compare as equal if they are equal
-	std::sort(distributions.begin(), distributions.end());
+	// Did we find any ranges?
+	if (ranges.empty())
+	{
+		// There is only one possible order for the parts, so we will edit `distributions` in place if necessary
+		if (!std::is_sorted(sorted_indexes.begin(), sorted_indexes.end()))
+		{
+			// The sorting will not have induced any change in the partition
+			// But it will require us to sort the distributions
+			// We will sort them in place, since we own the distributions
+			// Thus we only need one temporary row
+			Distribution temp(partition->size());
+			for (auto& d : distributions)
+			{
+				for (size_t i = 0; i != partition->size(); ++i)
+				{
+					temp[i] = d[sorted_indexes[i]];
+				}
+				d.swap(temp);
+			}
+		}
+		
+		// The order of the distributions has no significance, so we sort it prior to returning
+		std::sort(distributions.begin(), distributions.end());
+		return std::make_unique<StateType>(std::move(distributions), partition);
+	}
+
+	// Otherwise we want to consider an exponential number of states and return the "best"
+	// The best one is the one with smallest distribution
+	Distributions best_seen(distributions.size(), Distribution(partition->size()));
+	Distributions workspace(distributions.size(), Distribution(partition->size()));
+
+	// Currently indexes within sorted_indexes that compared as equal are in non-deterministic order
+	// Ensure that are sorted with respect to values of the coresponding column
+	ColumnCompare column_comparator{distributions};
+	for (auto& range : ranges)
+	{
+		std::sort(range.first, range.second, column_comparator);
+	}
 	
-	// Finally we can return a state, moving the distributions array into it
-	return std::make_unique<StateType>(std::move(distributions), partition);
+	// We can write the first order directly into best_seen
+	reorder_distribution(distributions, sorted_indexes, best_seen);
+	
+	// Keep considering new orders of sorted_indexes
+	while (advance_sorted_index(ranges, column_comparator))
+	{
+		// Construct, in workspace the distributions for the latest ordering
+		reorder_distribution(distributions, sorted_indexes, workspace);
+		
+		// If this one is better than the one we already had switch to it
+		if (workspace < best_seen)
+		{
+			best_seen.swap(workspace);
+		}
+	}
+
+	// The vector in best_seen is the one we want
+	return std::make_unique<StateType>(best_seen, partition);
 }
 
 bool ProblemFindMajority2::is_solved(const StateType& state)
