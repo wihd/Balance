@@ -45,12 +45,21 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
+            BlueprintIdentifier = "BE3379AD2DD4AFC70089E514"
+            BuildableName = "Balance2"
+            BlueprintName = "Balance2"
+            ReferencedContainer = "container:Balance.xcodeproj">
+         </BuildableReference>
+      </BuildableProductRunnable>
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
             BlueprintIdentifier = "BEB1EE4A2DBBCF0500853100"
             BuildableName = "Balance"
             BlueprintName = "Balance"
             ReferencedContainer = "container:Balance.xcodeproj">
          </BuildableReference>
-      </BuildableProductRunnable>
+      </MacroExpansion>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

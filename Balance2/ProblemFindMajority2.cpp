@@ -445,6 +445,27 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_partition(
 		case All:
 			joined_partition = join_all(distributions, partition, joined_distributions);
 			break;
+		case Validate:
+		{	// For testing we run both All and SameVariety
+			// We have never yet seen a case where it asserts because All returned different to SameVariety
+			// So either there is a bug, or the problem rarely if ever benefits from these joining
+			Distributions same_distributions;
+			auto same_partition = join_same_variety(distributions, partition, same_distributions);
+			Distributions all_distributions;
+			auto all_partition = join_all(distributions, partition, all_distributions);
+			if (!same_partition)
+			{
+				// Want to find any case where all identifies a join not found in same
+				// Note that all algorithm always returns a result, but it may be input partition
+				assert(all_partition == partition);
+				return simplify_state(std::move(all_distributions), partition);
+			}
+			assert(same_partition == all_partition);
+			auto same_result = simplify_state(Distributions(same_distributions), same_partition);
+			auto all_result = simplify_state(Distributions(all_distributions), all_partition);
+			assert(same_result->distributions == all_result->distributions);
+			return same_result;
+		}
 	}
 	
 	// Were we unable to compute a new partition by joining parts from the original one
@@ -1005,7 +1026,7 @@ void reorder_distribution(ProblemFindMajority2::Distributions& input,
 	std::sort(output.begin(), output.end());
 }
 
-typedef std::vector<std::pair<std::vector<size_t>, std::vector<size_t>>> RangesType;
+typedef std::vector<std::pair<std::vector<size_t>::iterator, std::vector<size_t>::iterator>> RangesType;
 
 struct ColumnCompare
 {
@@ -1152,14 +1173,17 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 			
 			// We have found a range of at least two indexes that equal for the helper
 			ranges.emplace_back(b, e);
-			b = e;
+			
+			// If we already reached end there are no more columns to consider
+			if (e == sorted_indexes.end())
+			{
+				break;
+			}
 		}
-		else
-		{
-			// Move to next pair
-			b = e;
-			++e;
-		}
+
+		// Start looking for another range at e
+		b = e;
+		++e;
 	}
 	
 	// Did we find any ranges?
@@ -1205,7 +1229,9 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 	reorder_distribution(distributions, sorted_indexes, best_seen);
 	
 	// Keep considering new orders of sorted_indexes
-	while (advance_sorted_index(ranges, column_comparator))
+	// The number can grow very large, so we cap it at 5040 (=7!) permutations
+	size_t counter = 1;
+	while (advance_sorted_index(ranges, column_comparator) && counter <= 5040)
 	{
 		// Construct, in workspace the distributions for the latest ordering
 		reorder_distribution(distributions, sorted_indexes, workspace);
@@ -1215,6 +1241,7 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 		{
 			best_seen.swap(workspace);
 		}
+		++counter;
 	}
 
 	// The vector in best_seen is the one we want

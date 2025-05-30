@@ -32,7 +32,8 @@ public:
 	enum class EnumJoinStrategy {
 		None,				// Do not join parts
 		SameVariety,		// Join parts iff all coins in part have same variety in each distribution
-		All					// Join parts whenever possible
+		All,				// Join parts whenever possible
+		Validate			// Compare All and SameVariety
 	};
 	
 	// A Distribution specifies for each part the number of H coins that might be in the part
@@ -76,6 +77,7 @@ private:
 	uint8_t maximum_count;				// Each variety must have at most this number of coins
 	uint8_t threshold;					// If variety has this number of coins it is majority
 	EnumJoinStrategy join_strategy;		// Specify effort taken to join parts in partition
+	size_t biggest_perm_count = 0;		// Count the most extra cases considered on permuation
 
 	// Helper functions
 	bool is_majority(const Distribution& distribution);
