@@ -66,6 +66,9 @@ public:
 	OutcomeArray<StateTypeRef> apply_weighing(const StateType& state,
 											  Weighing2* weighing,
 											  Partition2* partition);
+	bool apply_weighing_lite(const StateType& state,
+							 Weighing2* weighing,
+							 Partition2* partition);
 	bool is_solved(const StateType& state);
 	void write_description(Output2& output);
 	void write_solved_node(Output2& output, const StateType& state);

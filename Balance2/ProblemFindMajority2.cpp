@@ -33,7 +33,7 @@ static_assert(Problem<ProblemFindMajority2>);
 class Splitter
 {
 public:
-	Splitter(std::vector<uint8_t>& indexes) : indexes(indexes) {}
+	Splitter(std::vector<uint8_t>&& indexes) : indexes(std::move(indexes)) {}
 	virtual ~Splitter() {}
 
 	// Specify number of H coins in distribution to be split
@@ -55,7 +55,7 @@ public:
 	}
 
 protected:
-	std::vector<uint8_t>& indexes;		// Vector listing the indexes of our output parts
+	std::vector<uint8_t> indexes;		// Vector listing the indexes of our output parts
 	uint8_t count = 0;					// Number of H coins split over the output
 };
 
@@ -228,6 +228,42 @@ bool check_part_order(Weighing2* weighing)
 	return true;
 }
 
+std::vector<std::unique_ptr<Splitter>> generate_splitters(size_t input_size, Weighing2* weighing)
+{
+	// Generate a vector encapsulating  how each input part is split into one, two or three output parts
+	
+	// We will start by creating a vector listing for each input part the output part(s) over which it is split
+	// In the earlier version this was not needed since output parts from the same input part were placed
+	// together, but the requirement that part sizes do not decrement means this is no longer true
+	std::vector<std::vector<uint8_t>> split_indexes(input_size);
+	for (uint8_t i = 0; i != weighing->size(); ++i)
+	{
+		split_indexes[(*weighing)[i].part].push_back(i);
+	}
+	
+	// We now create a vector of splitters, which will handle splitting and reordering
+	std::vector<std::unique_ptr<Splitter>> splitters;
+	for (auto& split_index : split_indexes)
+	{
+		switch (split_index.size())
+		{
+			case 1:
+				splitters.push_back(std::make_unique<SplitterOne>(std::move(split_index)));
+				break;
+			case 2:
+				splitters.push_back(std::make_unique<SplitterTwo>(std::move(split_index)));
+				break;
+			case 3:
+				splitters.push_back(std::make_unique<SplitterThree>(std::move(split_index)));
+				break;
+			default:
+				// Split counts should always be 1, 2 or 3
+				assert(false);
+		}
+	}
+	return splitters;
+}
+
 OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_weighing(const StateType& state,
 																					  Weighing2* weighing,
 																					  Partition2* partition)
@@ -244,41 +280,14 @@ OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_wei
 	// several output distributions (since the H coins may be split over the output parts in various ways).
 	
 	// The weighing refines the partitions if and only if the output partition has more parts
-	if (partition->size() != state.partition->size())
+	size_t input_size = state.partition->size();
+	if (partition->size() != input_size)
 	{
 		// At least one part must be split.  Even a part is not split its index may change.
 		// So we need to compute a new Distributions object
+		// Construct state needed to describe how to split the input parts
+		auto splitters = generate_splitters(input_size, weighing);
 
-		// We will start by creating a vector listing for each input part the output part(s) over which it is split
-		// In the earlier version this was not needed since output parts from the same input part were placed
-		// together, but the requirement that part sizes do not decrement means this is no longer true
-		std::vector<std::vector<uint8_t>> split_indexes(state.partition->size());
-		for (uint8_t i = 0; i != weighing->size(); ++i)
-		{
-			split_indexes[(*weighing)[i].part].push_back(i);
-		}
-		
-		// We now create a vector of splitters, which will handle splitting and reordering
-		std::vector<std::unique_ptr<Splitter>> splitters;
-		for (auto& split_index : split_indexes)
-		{
-			switch (split_index.size())
-			{
-				case 1:
-					splitters.push_back(std::make_unique<SplitterOne>(split_index));
-					break;
-				case 2:
-					splitters.push_back(std::make_unique<SplitterTwo>(split_index));
-					break;
-				case 3:
-					splitters.push_back(std::make_unique<SplitterThree>(split_index));
-					break;
-				default:
-					// Split counts should always be 1, 2 or 3
-					assert(false);
-			}
-		}
-		
 		// Apply the splitters to determine what happens to each distribution
 		Distributions split_distributions;
 		Distribution current(partition->size(), 0);
@@ -1246,6 +1255,24 @@ ProblemFindMajority2::StateTypeRef ProblemFindMajority2::simplify_state(Distribu
 
 	// The vector in best_seen is the one we want
 	return std::make_unique<StateType>(best_seen, partition);
+}
+
+bool ProblemFindMajority2::apply_weighing_lite(const StateType& state, Weighing2* weighing, Partition2* partition)
+{
+	// This is a greatly simplified implementation of apply_weighing() which we hope will allow us to try
+	// to brute force a slightly larger number of coins (say 11 instead of 9)
+	// We expect to invoke this method on a state that is not resolved
+	// The method will return true if all three outcomes of the weighing are resolved (i.e. represent
+	// solved states or are impossible).  Otherwise it will return false.
+	
+	// We can answer this question much faster since we do not need to be concerned with simplifying the state
+	// or indeed even with constructing its members.  As soon as we have found two outcomes with different
+	// majorities we know it is false.
+	
+	// We hope to save some time this way.
+	// But the real saving is that we will not attempt to save any states after four levels of weighing.
+	// We hope this will allow us to find a solution with far fewer saved states.
+	return false;
 }
 
 bool ProblemFindMajority2::is_solved(const StateType& state)
