@@ -228,11 +228,37 @@ bool check_part_order(Weighing2* weighing)
 	return true;
 }
 
-std::vector<std::unique_ptr<Splitter>> generate_splitters(size_t input_size, Weighing2* weighing)
+// Minor class that generates split distributions
+class SplitGenerator
 {
-	// Generate a vector encapsulating  how each input part is split into one, two or three output parts
+	using Distribution = ProblemFindMajority2::Distribution;
+	using Distributions = ProblemFindMajority2::Distributions;
+	using DistributionIt = Distributions::const_iterator;
 	
+public:
+	SplitGenerator(const Distributions& distributions, Weighing2* weighing, Partition2* partition);
+	
+	// Since there is always at least one split, after construction operator*() will be interesting
+	// Then invoke operator bool() until it returns false - so use a do loop
+	const Distribution& operator*() const { return result; }
+	operator bool();
+
+private:
+	std::vector<std::unique_ptr<Splitter>> splitters;
+	Distribution result;
+	Partition2* partition;
+	DistributionIt current;
+	DistributionIt sentinel;
+	void init_result();
+};
+
+SplitGenerator::SplitGenerator(const Distributions& distributions, Weighing2* weighing, Partition2* partition)
+	: result(partition->size()), current(distributions.begin()), sentinel(distributions.end()), partition(partition)
+{
 	// We will start by creating a vector listing for each input part the output part(s) over which it is split
+	auto input_size = distributions.front().size();
+	splitters.reserve(input_size);
+
 	// In the earlier version this was not needed since output parts from the same input part were placed
 	// together, but the requirement that part sizes do not decrement means this is no longer true
 	std::vector<std::vector<uint8_t>> split_indexes(input_size);
@@ -242,7 +268,6 @@ std::vector<std::unique_ptr<Splitter>> generate_splitters(size_t input_size, Wei
 	}
 	
 	// We now create a vector of splitters, which will handle splitting and reordering
-	std::vector<std::unique_ptr<Splitter>> splitters;
 	for (auto& split_index : split_indexes)
 	{
 		switch (split_index.size())
@@ -261,7 +286,61 @@ std::vector<std::unique_ptr<Splitter>> generate_splitters(size_t input_size, Wei
 				assert(false);
 		}
 	}
-	return splitters;
+	
+	// Initialise result using the first split of first distribution
+	init_result();
+}
+
+SplitGenerator::operator bool()
+{
+	// We do not expect to be called again once we have examined every distibution
+	assert(current != sentinel);
+	
+	// Examine each splitter in turn, looking for one that provides another split
+	for (auto splitter = splitters.begin(); splitter != splitters.end(); ++splitter)
+	{
+		// Are we able to advance this splitter?
+		if ((*splitter)->advance(result, *partition))
+		{
+			// All the splitters that had finished must be restarted
+			// Note that since all the splitters write into different parts of current it does not
+			// matter that we advanced them in uneven order
+			for (auto it = splitters.begin(); it != splitter; ++it)
+			{
+				(*it)->restart(result, *partition);
+			}
+
+			// We have found a new distribution, and set it to result
+			return true;
+		}
+	}
+
+	// If possible start again with another distribution
+	if (++current == sentinel)
+	{
+		return false;
+	}
+	else
+	{
+		init_result();
+		return true;
+	}
+}
+
+void SplitGenerator::init_result()
+{
+	// Initialise the result distribution based on the current distribution by resetting each splitter
+	assert(current != sentinel);
+	for (auto [h_count, splitter] : std::views::zip(*current, splitters))
+	{
+		splitter->set_count(h_count);
+	}
+
+	// Restart all of the splitters (which will overwrite all entries in `current` to a valid output distribution)
+	for (auto& splitter : splitters)
+	{
+		splitter->restart(result, *partition);
+	}
 }
 
 OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_weighing(const StateType& state,
@@ -285,55 +364,13 @@ OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_wei
 	{
 		// At least one part must be split.  Even a part is not split its index may change.
 		// So we need to compute a new Distributions object
-		// Construct state needed to describe how to split the input parts
-		auto splitters = generate_splitters(input_size, weighing);
-
-		// Apply the splitters to determine what happens to each distribution
+		// We use a helper class to generate the distributions
 		Distributions split_distributions;
-		Distribution current(partition->size(), 0);
-		for (auto& distribution : state.distributions)
+		SplitGenerator generator(state.distributions, weighing, partition);
+		do
 		{
-			// Configure the splitters with the number of H coins in each input part
-			// C++23 Note: We can have option to iterate over two collections together
-			for (auto [h_count, splitter] : std::views::zip(distribution, splitters))
-			{
-				splitter->set_count(h_count);
-			}
-
-			// Restart all of the splitters (which will overwrite all entries in `current` to a valid output distribution)
-			for (auto& splitter : splitters)
-			{
-				splitter->restart(current, *partition);
-			}
-			
-			// Loop over ways of splitting this distribution
-			auto advanced_splitter = splitters.begin();
-			while (advanced_splitter != splitters.end())
-			{
-				// Copy the current distribution to split_distributions
-				split_distributions.emplace_back(current.begin(), current.end());
-				
-				// We walk through the splitters, trying to find one that can be advanced
-				for (advanced_splitter = splitters.begin(); advanced_splitter != splitters.end(); ++advanced_splitter)
-				{
-					// Are we able to advance this splitter?
-					if ((*advanced_splitter)->advance(current, *partition))
-					{
-						// All the splitters that had finished must be restarted
-						// Note that since all the splitters write into different parts of current it does not
-						// matter that we advanced them in uneven order
-						for (auto it = splitters.begin(); it != advanced_splitter; ++it)
-						{
-							(*it)->restart(current, *partition);
-						}
-						
-						// Break to leave any remaining splitters in place
-						// Also we must leave advance_splitter pointing to an actual splitter
-						break;
-					}
-				}
-			} // next splitter distribution
-		} // next input distribution
+			split_distributions.emplace_back((*generator).begin(), (*generator).end());
+		} while (generator);
 		
 		// We now have list of distributions to process
 		return apply_weighing_to_distributions(split_distributions, *weighing, partition);
