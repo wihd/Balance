@@ -364,7 +364,7 @@ OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_wei
 	{
 		// At least one part must be split.  Even a part is not split its index may change.
 		// So we need to compute a new Distributions object
-		// We use a helper class to generate the distributions
+		// We use a helper class to generate the distributions, and extract them into a vector
 		Distributions split_distributions;
 		SplitGenerator generator(state.distributions, weighing, partition);
 		do
@@ -386,6 +386,44 @@ OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_wei
 	}
 }
 
+// Helper function to decide the outcome of a weighing for a specific distribution
+inline Outcome apply_weighing_to_distribution(const ProblemFindMajority2::Distribution& distribution,
+									   Weighing2& weighing)
+{
+	// Determine the outcome of the given weighing to the given distribution
+	// Count number of H coins placed in each pan by this distribution
+	int count_left = 0;
+	int count_right = 0;
+	for (size_t i = 0; i != weighing.size(); ++i)
+	{
+		switch (weighing[i].placement)
+		{
+			case LeftPan:
+				count_left += distribution[i];
+				break;
+			case RightPan:
+				count_right += distribution[i];
+				break;
+			case SetAside:
+				break;
+		}
+	}
+
+	// The counts tell us which pan is heavier
+	if (count_left > count_right)
+	{
+		return Outcome::LeftHeavier;
+	}
+	else if (count_right > count_left)
+	{
+		return Outcome::RightHeavier;
+	}
+	else
+	{
+		return Outcome::Balances;
+	}
+}
+
 OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_weighing_to_distributions(
 	const Distributions& distributions, Weighing2& weighing, Partition2* partition)
 {
@@ -397,39 +435,7 @@ OutcomeArray<ProblemFindMajority2::StateTypeRef> ProblemFindMajority2::apply_wei
 	OutcomeArray<std::vector<const Distribution*>> outcome_distributions;
 	for (auto& current : distributions)
 	{
-		// We must allocate it to one of the three outcome sets based on the outcome of the weighing
-		// when this distribution is used
-		// Count number of H coins placed in each pan by this distribution
-		int count_left = 0;
-		int count_right = 0;
-		for (size_t i = 0; i != weighing.size(); ++i)
-		{
-			switch (weighing[i].placement)
-			{
-				case LeftPan:
-					count_left += current[i];
-					break;
-				case RightPan:
-					count_right += current[i];
-					break;
-				case SetAside:
-					break;
-			}
-		}
-		
-		// Insert (a pointer to) current distribution into one of the three output sets based on what would happen
-		if (count_left > count_right)
-		{
-			outcome_distributions[Outcome::LeftHeavier].push_back(&current);
-		}
-		else if (count_right > count_left)
-		{
-			outcome_distributions[Outcome::RightHeavier].push_back(&current);
-		}
-		else
-		{
-			outcome_distributions[Outcome::Balances].push_back(&current);
-		}
+		outcome_distributions[apply_weighing_to_distribution(current, weighing)].push_back(&current);
 	}
 	
 	// We have computed the output state, but we might be able to simplify it
@@ -1309,7 +1315,80 @@ bool ProblemFindMajority2::apply_weighing_lite(const StateType& state, Weighing2
 	// We hope to save some time this way.
 	// But the real saving is that we will not attempt to save any states after four levels of weighing.
 	// We hope this will allow us to find a solution with far fewer saved states.
-	return false;
+	
+	// For each outcome we track if we have seen majority H (+1) majority L (-1) or neither (0) distributions
+	OutcomeArray<int> seen{0, 0, 0};
+	
+	// The weighing refines the partitions if and only if the output partition has more parts
+	size_t input_size = state.partition->size();
+	if (partition->size() != input_size)
+	{
+		// At least one part must be split.  Even a part is not split its index may change.
+		// So we need to compute a new Distributions object
+		// We use a helper class to generate the distributions
+		SplitGenerator generator(state.distributions, weighing, partition);
+		do
+		{
+			// There is no need to store the split distributions - we just apply them now
+			auto& seen_outcome = seen[apply_weighing_to_distribution(*generator, *weighing)];
+			if (is_majority(*generator))
+			{
+				if (seen_outcome == -1)
+				{
+					return false;
+				}
+				else
+				{
+					seen_outcome = 1;
+				}
+			}
+			else
+			{
+				if (seen_outcome == 1)
+				{
+					return false;
+				}
+				else
+				{
+					seen_outcome = -1;
+				}
+			}
+		} while (generator);
+	}
+	else
+	{
+		// There is no need to split parts, so we just process each input distribution
+		assert(check_part_order(weighing));
+		for (auto& d : state.distributions)
+		{
+			auto& seen_outcome = seen[apply_weighing_to_distribution(d, *weighing)];
+			if (is_majority(d))
+			{
+				if (seen_outcome == -1)
+				{
+					return false;
+				}
+				else
+				{
+					seen_outcome = 1;
+				}
+			}
+			else
+			{
+				if (seen_outcome == 1)
+				{
+					return false;
+				}
+				else
+				{
+					seen_outcome = -1;
+				}
+			}
+		}
+	}
+	
+	// Each outcome must have had at most one majority decision (it might have had none)
+	return true;
 }
 
 bool ProblemFindMajority2::is_solved(const StateType& state)
