@@ -83,7 +83,7 @@ class Manager2
 		
 		// We record a lower bound for this node's resolved depth
 		// Raising the lower bound is hard because we must consider all of the node's children.
-		// To set out minimum depth to $d+1$ we must show that every child weighing has at least one
+		// To set minimum depth to $d+1$ we must show that every child weighing has at least one
 		// outcome whose minimum depth is at least $d$.
 		uint8_t depth_min = 0;
 		
@@ -95,6 +95,11 @@ class Manager2
 		// Only way a node can have a depth that isn't infinity is if it has been expanded - very minor optimisation!
 		bool is_expanded() const { return depth_max != DEPTH_INFINITY || !children.empty(); }
 		
+		// A lite expanded node is either a node that has been properly expanded, or one for which depth_min
+		// has been set to at least 2.  This means we reviewed all of the immediate children of this node
+		// and none of them were resolved.
+		bool is_expanded_lite() const { return is_expanded() || depth_min >= 2; }
+
 		// Output the depth numbers as a single line on output
 		std::string format_resolution() const;
 		void write_resolution(Output2& output) const { output.println("Status:    {}", format_resolution()); }
@@ -166,7 +171,8 @@ private:
 	NodeIdMap node_ids;				// On writing, store map assigning ids to nodes
 	
 	// Helper methods
-	void expand(const Iterator& node);
+	void expand(const Iterator& node, int hint = -1);
+	void expand_lite(const Iterator& node);
 	void improve_node(Iterator& node, uint8_t target_depth);
 	bool write_weighing(Output2& output, Iterator& node);
 	void write_node(Output2& output, Iterator& node);
@@ -472,7 +478,7 @@ void Manager2<P>::improve_node(Iterator& node, uint8_t target_depth)
 }
 
 template <Problem P>
-void Manager2<P>::expand(const Iterator& node)
+void Manager2<P>::expand(const Iterator& node, int hint)
 {
 	// Ensure that the node has full compliment of children, computing its depth if possible
 	// Return the number of children added to the node (if it was already expanded we return 0)
@@ -503,12 +509,16 @@ void Manager2<P>::expand(const Iterator& node)
 	// Each child of the node will correspond to a weighing
 	// We cache the distinct weighings for each partition (omitting some weighings which are always
 	// solvable by symmetry of the balance).  Iterate through each of these weighings.
+	// If we were given a hint we start from the corresponding child (which presumably caller knew was resolved)
 	Partition2* partition = key.partition;
-	int weighing_number = -1;
-	for (auto [weighing, output_partition] : partition->get_children())
+	auto& children = partition->get_children();
+	for (int weighing_number = (hint != -1) ? hint : 0;
+		 weighing_number != children.size();
+		 ++weighing_number)
 	{
+		auto [weighing, output_partition] = children[weighing_number];
+		
 		// Ask the problem to determine the output state (for each outcome) when applying this weighing to our state
-		++weighing_number;
 		auto outcomes = problem.apply_weighing(key, weighing, output_partition);
 
 		// It is permitted to omit a weighing if we can conclude that following the weighing will not help.
@@ -668,6 +678,54 @@ void Manager2<P>::expand(const Iterator& node)
 		// then our min depth is that value
 		status.depth_min = std::min(static_cast<uint8_t>(worst_child_min_depth + 1), status.depth_max);
 	}
+}
+
+template <Problem P>
+void Manager2<P>::expand_lite(const Iterator& node)
+{
+	// Ensure that we have expanded the node sufficiently to determine whether its resolved depth is 1 or more
+	// We do this by iterating over all the weighings and see if any of them are completely resolved (i.e. on
+	// applying the weighing all three outcomes are resolved).
+	// * If we find such a weighing we record it as a sole child (exaxtly as `expand` would have done).
+	// * If we don't find such a weighing then we can set depth_min to 2 but we leave children empty.
+	// This method is much faster than `expand` since we do not create any new nodes.
+	// We expect its faster in the problem as well (since it does not need to construct a state).
+	auto& key = node.key();
+	auto& status = node.value();
+	
+	// Since the "tree" is really a DAG we will often visit nodes multiple times
+	// An attempt to lightly expand a node that was already lightly expanded does nothing more
+	if (status.is_expanded_lite())
+	{
+		return;
+	}
+	
+	// We do not need to store any state as we iterate over the weighings
+	// If we find a weighing all of whose outcomes are solved then we can mark this node as resolved at depth 1
+	// and exit immediately.  If we don't we just set this node's depth_min and exit.
+	Partition2* partition = key.partition;
+	int weighing_number = -1;
+	for (auto [weighing, output_partition] : partition->get_children())
+	{
+		// Ask the problem to determine whether have found a suitable weighing
+		++weighing_number;
+		if (problem.apply_weighing_lite(key, weighing, output_partition))
+		{
+			// We have determined that expanding this node would have taken the optimisation of only
+			// keeping one child.  Rather than duplicating the state here we will just switch to expand()
+			// but give it a hint to jump to this child.
+			expand(node, weighing_number);
+			return;
+		}
+	}
+	
+	// We examine every child and determined that its resolved depth was non-zero
+	// So every child has resolved depth 1 or more, so our resolved depth is 2 or more
+	// Since we did not track the nodes for our children we have no information at all for our maximum
+	// So we record the improved estimate for depth_min and leave depth_max at infinity.
+	// This will cause is_expanded_lite() to be `true` but is_expanded() is still `false`.
+	status.depth_min = 2;
+	assert(status.depth_max == DEPTH_INFINITY);
 }
 
 template <Problem P>

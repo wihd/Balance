@@ -88,6 +88,12 @@ concept Problem = requires(P problem,
 		problem.apply_weighing(state_reference, weighing, partition)
 	} -> std::same_as<OutcomeArray<std::unique_ptr<typename P::StateType>>>;
 
+	// Light weight method to apply a weighting to a state and determine if all three outcomes are immediately
+	// resolved or not.  This is used to claw one more layer of depth out of a search without generating new states.
+	{
+		problem.apply_weighing_lite(state_reference, weighing, partition)
+	} -> std::same_as<bool>;
+	
 	// Some states represent a solved problem.  Test a state to see if that's the case.
 	{ problem.is_solved(state_reference) } -> std::same_as<bool>;
 	
