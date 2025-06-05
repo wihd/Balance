@@ -404,7 +404,16 @@ void Manager2<P>::improve_node(Iterator& node, uint8_t target_depth)
 	// The iterator may change within this method, but it should always have same value on exit as it did no entry
 	
 	// Ensure that input node is expanded (method does nothing if node is solved, or if it was already expanded)
-	expand(node);
+	// If our target is to get depth_min >= 2, then the much cheaper expand_lite() suffices since it will either
+	// resolve this node (with depth 1) or set depth_min to 2.
+	if (target_depth <= 2)
+	{
+		expand_lite(node);
+	}
+	else
+	{
+		expand(node);
+	}
 	
 	// We will exit immediately if the goal is already met
 	auto& status = node.value();
