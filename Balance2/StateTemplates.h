@@ -49,6 +49,11 @@ concept ProblemState = std::totally_ordered<T> && requires(T state)
 	// is that the compiler is constraining the declaraed type of the given expression, which is actually
 	// a reference to the expression.
 	{ state.partition } -> std::convertible_to<Partition2*>;
+	
+	// We want to assert that state.score exists and is an arithmetic type
+	// Following same page as written above we use a nested requires block to avoid trying to assert that
+	// `float&` (or `int&` etc.) are arithmetic - that would fail.
+	requires std::is_arithmetic_v<decltype(state.score)>;
 };
 
 /**

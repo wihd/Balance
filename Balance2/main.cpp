@@ -19,7 +19,7 @@
 #include "ProblemFindMajority2.hpp"
 #include "Output2.hpp"
 
-constexpr uint8_t coint_count = 11;
+constexpr uint8_t coint_count = 9;
 
 int main(int argc, const char * argv[]) {
 	// Instantiate a manager to solve a specific problem

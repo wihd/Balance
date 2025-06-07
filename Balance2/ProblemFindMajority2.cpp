@@ -10,7 +10,6 @@
 #include <numeric>
 #include "ProblemFindMajority2.hpp"
 #include "StateTemplates.h"
-#include "Partition2.hpp"
 #include "Weighing2.hpp"
 #include "Output2.hpp"
 

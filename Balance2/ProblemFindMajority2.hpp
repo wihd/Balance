@@ -14,7 +14,7 @@
 
 #include <vector>
 #include "Types2.h"
-class Partition2;
+#include "Partition2.hpp"
 class Weighing2;
 class Output2;
 
@@ -52,8 +52,26 @@ public:
 		// that multiple singleton parts in the output distribution are identical.
 		Partition2* partition;
 
-		// Instruct compiler to generate operators to compare StateType objects
-		auto operator<=>(const StateType& other) const = default;
+		// A higher score means we think the state is more likely to be close to a solution
+		// The manager will investigate high scoring states first
+		// We will use a number in range [0, 1] for our score, 1.0 being top score
+		float score = 0.0;
+
+		// When constructing the total order we exclude the score field since it is determined from the other fields
+		bool operator==(const StateType& other) const
+		{
+			return partition == other.partition && distributions == other.distributions;
+		}
+		auto operator<=>(const StateType& other) const
+		{
+			// We assume that the partition is a representative object, so pointer comparison works
+			if (partition != other.partition)
+			{
+				// To avoid non-deterministic outcome compare by function not pointer value
+				return *partition <=> *other.partition;
+			}
+			return distributions <=> other.distributions;
+		}
 	};
 	using StateTypeRef = std::unique_ptr<StateType>;
 	
